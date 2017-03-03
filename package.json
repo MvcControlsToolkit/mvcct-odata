@@ -1,0 +1,8 @@
+{
+  "dependencies": {},
+  "devDependencies": {
+    "jasmine": "^2.5.3",
+    "typescript": "^2.2.1",
+    "uglify-js": "^2.8.4"
+  }
+}

@@ -1,0 +1,3 @@
+namespace mvcct{
+    export let odata=mvcct_odata;
+}
