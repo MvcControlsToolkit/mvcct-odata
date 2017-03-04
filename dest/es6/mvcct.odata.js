@@ -14,6 +14,7 @@ var mvcct_odata;
     var anArgumentNull = "all arguments must have a not null value";
     var firstOperandNull = "first operand must have a not null value";
     var notImplemented = "notImplemented";
+    var guidMatch = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
     var QueryNode = (function () {
         function QueryNode() {
         }
@@ -102,26 +103,78 @@ var mvcct_odata;
             }
             return _this;
         }
+        QueryValue.prototype.formatInt = function (x, len) {
+            var res = x + "";
+            if (res.length < len)
+                return new Array(len - res.length + 1).join("0") + res;
+            else
+                return res;
+        };
+        QueryValue.prototype.normalizeTime = function (x, days, maxTree) {
+            var parts = x.split(":");
+            if (days && parts[0].indexOf(".") < 0)
+                x = "00." + x;
+            if (parts.length == 1)
+                x = x + ":00:00.000";
+            else if (parts.length == 2)
+                x = x + ":00.000";
+            else if (parts[2].indexOf(".") < 0)
+                x = x + ".000";
+            else if (maxTree && parts[2].length > 6)
+                x = x.substr(0, x.length - parts[2].length + 6);
+            return x;
+        };
+        QueryValue.prototype.isGuid = function () {
+            return typeof this.value == "string" && guidMatch.test(this.value);
+        };
         QueryValue.prototype.setDate = function (x) {
             this.dateTimeType = QueryValue.IsDate;
+            if (!x)
+                this.value = null;
+            this.value = this.formatInt(x.getFullYear(), 4) +
+                "-" + this.formatInt(x.getMonth() + 1, 2) +
+                "-" + this.formatInt(x.getDate(), 2) + "T00:00:00.000";
         };
         QueryValue.prototype.setTime = function (x) {
             this.dateTimeType = QueryValue.IsTime;
+            if (!x)
+                this.value = null;
+            this.value = this.formatInt(x.getHours(), 2) +
+                ":" + this.formatInt(x.getMinutes(), 2) +
+                ":" + this.formatInt(x.getSeconds(), 2) +
+                "." + this.formatInt(x.getUTCMilliseconds(), 3);
         };
         QueryValue.prototype.setDuration = function (days, hours, minutes, seconds, milliseconds) {
             if (minutes === void 0) { minutes = 0; }
             if (seconds === void 0) { seconds = 0; }
             if (milliseconds === void 0) { milliseconds = 0; }
             this.dateTimeType = QueryValue.IsDuration;
+            this.value = this.formatInt(days || 0, 2) +
+                "." + this.formatInt(hours || 0, 2) +
+                ":" + this.formatInt(minutes || 0, 2) +
+                "." + this.formatInt(milliseconds || 0, 3);
         };
         QueryValue.prototype.setDateTimeLocal = function (x) {
             this.dateTimeType = QueryValue.IsDateTime;
-        };
-        QueryValue.prototype.setDateTimeUct = function (x) {
-            this.dateTimeType = QueryValue.IsDateTime;
+            if (!x)
+                this.value = null;
+            return x.toISOString();
         };
         QueryValue.prototype.setDateTimeInvariant = function (x) {
             this.dateTimeType = QueryValue.IsDateTime;
+            if (!x)
+                this.value = null;
+            this.value = this.formatInt(x.getFullYear(), 4) +
+                "-" + this.formatInt(x.getMonth() + 1, 2) +
+                "-" + this.formatInt(x.getDate(), 2) +
+                "T" + this.formatInt(x.getHours(), 2) +
+                ":" + this.formatInt(x.getMinutes(), 2) +
+                ":" + this.formatInt(x.getSeconds(), 2) +
+                "." + this.formatInt(x.getUTCMilliseconds(), 3);
+        };
+        QueryValue.prototype.setBoolean = function (x) {
+            this.dateTimeType = QueryValue.IsNotDateTime;
+            this.value = x;
         };
         QueryValue.prototype.setNumber = function (x) {
             this.dateTimeType = QueryValue.IsNotDateTime;
@@ -132,7 +185,33 @@ var mvcct_odata;
             this.value = x;
         };
         QueryValue.prototype.toString = function () {
-            throw notImplemented;
+            if (this.value === null || typeof this.value == "undefined")
+                return null;
+            else if (this.dateTimeType == QueryValue.IsNotDateTime)
+                return this.value + "";
+            var val = this.value;
+            switch (this.dateTimeType) {
+                case QueryValue.IsDateTime:
+                    if (val.charAt(val.length - 1) != "Z")
+                        return val + "Z";
+                    else
+                        return val;
+                case QueryValue.IsDate:
+                    return val.split("T")[0];
+                case QueryValue.IsTime:
+                    val = this.normalizeTime(val, false, true);
+                    return val;
+                case QueryValue.IsDuration:
+                    val = this.normalizeTime(val, true, false);
+                    var parts = val.match(/\d+/g);
+                    return "'P" + parts[0] + "D" +
+                        parts[1] + "H" +
+                        parts[2] + "M" +
+                        parts[3] + "." +
+                        parts[4] + new Array(13 - parts[4].length).join("0") + "S'";
+                default:
+                    return null;
+            }
         };
         return QueryValue;
     }(QueryFilterClause));
@@ -161,6 +240,12 @@ var mvcct_odata;
         }
         QueryFilterCondition.prototype.toString = function () {
             var val = _super.prototype.toString.call(this);
+            if (val === null)
+                return null;
+            if (this.property && this.dateTimeType == QueryValue.IsNotDateTime &&
+                typeof val == "string" &&
+                !this.isGuid())
+                val = "'" + val + "'";
             throw notImplemented;
         };
         return QueryFilterCondition;
@@ -318,6 +403,11 @@ var mvcct_odata;
         }
         QueryDescription.prototype.customUrlEncode = function (func) {
             this.urlEncode = func || this.urlEncode;
+        };
+        QueryDescription.fromJson = function (x) {
+            if (!x)
+                return null;
+            return new QueryDescription(JSON.parse(x));
         };
         return QueryDescription;
     }());

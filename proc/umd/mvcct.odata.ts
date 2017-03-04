@@ -5,6 +5,7 @@ namespace mvcct_odata {
     const anArgumentNull = "all arguments must have a not null value";
     const firstOperandNull = "first operand must have a not null value";
     const notImplemented = "notImplemented";
+    const guidMatch = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
     export abstract class QueryNode
     {
     }
@@ -114,7 +115,8 @@ namespace mvcct_odata {
         static IsTime = 2;
         static IsDateTime = 3;
         static IsDuration = 4;
-
+        
+        
         value: any;
         dateTimeType: number;
         constructor(origin: IQueryValue=null)
@@ -131,55 +133,119 @@ namespace mvcct_odata {
                 this.dateTimeType=QueryFilterCondition.IsNotDateTime;
             }
         }
-        setDate(x: Date) {
-            this.dateTimeType = QueryValue.IsDate;
-            //to do;
+        private formatInt(x: number, len:number) : string
+        {
+            var res = x+"";
+            if(res.length<len) return new Array(len-res.length+1).join("0")+res;
+            else return res;
         }
-        setTime(x: Date) {
+        private normalizeTime(x: string, days: boolean, maxTree:boolean): string
+        {
+            var parts=x.split(":");
+            if(days && parts[0].indexOf(".")<0) x="00."+x;
+            if(parts.length==1) x=x+":00:00.000";
+            else if (parts.length ==2) x=x+":00.000";
+            else if(parts[2].indexOf(".")<0) x=x+".000";
+            else if(maxTree && parts[2].length>6) x=x.substr(0, x.length-parts[2].length+6);
+            return x; 
+        }
+        isGuid(): boolean
+        {
+            return typeof this.value == "string" && guidMatch.test(<string>this.value);
+        }
+        setDate(x: Date|null) {
+            this.dateTimeType = QueryValue.IsDate;
+            if(!x) this.value=null;
+            this.value=this.formatInt(x.getFullYear(), 4) +
+                "-"+this.formatInt(x.getMonth()+1, 2) +
+                "-"+this.formatInt(x.getDate(), 2) +"T00:00:00.000";
+        }
+        setTime(x: Date|null) {
             this.dateTimeType = QueryValue.IsTime;
-            //to do;
+            if(!x) this.value=null;
+            this.value=this.formatInt(x.getHours(), 2) +
+                ":"+this.formatInt(x.getMinutes(), 2) +
+                ":"+this.formatInt(x.getSeconds(), 2) +
+                "."+this.formatInt(x.getUTCMilliseconds(), 3);
         } 
         setDuration(days: number, hours: number, minutes: number=0, 
             seconds: number =0, milliseconds: number =0) {
             this.dateTimeType = QueryValue.IsDuration;
-            //to do;
+            this.value=this.formatInt(days || 0, 2) +
+                "."+this.formatInt(hours || 0, 2) +
+                ":"+this.formatInt(minutes || 0, 2) +
+                "."+this.formatInt(milliseconds || 0, 3);
         }
-        setDateTimeLocal(x: Date) {
+        setDateTimeLocal(x: Date|null) {
             this.dateTimeType = QueryValue.IsDateTime;
-            //to do;
+            if(!x) this.value=null;
+            return x.toISOString();
         }
-        setDateTimeUct(x: Date) {
+        setDateTimeInvariant(x: Date|null) {
             this.dateTimeType = QueryValue.IsDateTime;
-            //to do;
+            if(!x) this.value=null;
+            this.value=this.formatInt(x.getFullYear(), 4) +
+                "-"+this.formatInt(x.getMonth()+1, 2) +
+                "-"+this.formatInt(x.getDate(), 2) +
+                "T"+this.formatInt(x.getHours(), 2) +
+                ":"+this.formatInt(x.getMinutes(), 2) +
+                ":"+this.formatInt(x.getSeconds(), 2) +
+                "."+this.formatInt(x.getUTCMilliseconds(), 3);
         }
-        setDateTimeInvariant(x: Date) {
-            this.dateTimeType = QueryValue.IsDateTime;
-            //to do;
-        }
-        setNumber(x: number) {
+        setBoolean(x: boolean|null) {
             this.dateTimeType = QueryValue.IsNotDateTime;
             this.value = x;
         }
-        setString(x: string) {
+        setNumber(x: number|null) {
+            this.dateTimeType = QueryValue.IsNotDateTime;
+            this.value = x;
+        }
+        setString(x: string|null) {
             this.dateTimeType = QueryValue.IsNotDateTime;
             this.value=x;
         }
-        toString() : string
+        toString() : string|null
         {
-            throw notImplemented;
+            if(this.value===null || typeof this.value == "undefined")
+                 return null;
+            else if(this.dateTimeType == QueryValue.IsNotDateTime)
+                return this.value + "";
+            let val = (<string>this.value);
+            switch(this.dateTimeType)
+            {
+                case QueryValue.IsDateTime:
+                    if(val.charAt(val.length-1) != "Z") return val+"Z";
+                    else return val;
+                case QueryValue.IsDate:
+                   return  val.split("T")[0];
+                case QueryValue.IsTime:
+                    val=this.normalizeTime(val, false, true);
+                    return val;
+                case QueryValue.IsDuration:
+                    val=this.normalizeTime(val, true, false);
+                    let parts = val.match(/\d+/g);
+                    return "'P"+parts[0] + "D"+
+                        parts[1] + "H" +
+                        parts[2] + "M" +
+                        parts[3] + "." +
+                        parts[4] + new Array(13-parts[4].length).join("0") + "S'";
+                default:
+                    return null;
+            }
+            
         }
 
     }
     export interface IQueryFilterCondition extends IQueryValue
     {
-        operator: string;
-        property: string;
+        operator: string|null;
+        property: string|null;
         inv: boolean;
     }
     export class QueryFilterCondition  extends QueryValue implements IQueryFilterCondition
     {
-        operator: string;
-        property: string;
+        operator: string|null;
+        property: string|null;
         inv: boolean;
         constructor(origin: IQueryFilterCondition=null)
         {
@@ -197,9 +263,14 @@ namespace mvcct_odata {
                 this.property=null;
             }
         }
-        toString(): string
+        toString(): string|null
         {
-            var val = super.toString();
+            var val=super.toString();
+            if (val === null) return null;
+            if(this.property &&  this.dateTimeType == QueryValue.IsNotDateTime &&
+                typeof val == "string" &&
+                !this.isGuid()
+            ) val = "'"+val+"'";
             throw notImplemented;
         }
     }
@@ -416,6 +487,12 @@ namespace mvcct_odata {
         sorting: Array<QuerySortingCondition>;
 
         attachedTo: Endpoint;
+
+        static fromJson(x: string) : QueryDescription {
+            if(!x) return null;
+            return new QueryDescription(JSON.parse(x));
+        }
+        
         constructor(origin: IQueryDescription)
         {
             if(origin)

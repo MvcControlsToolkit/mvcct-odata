@@ -38,27 +38,30 @@ declare namespace mvcct_odata {
         value: any;
         dateTimeType: number;
         constructor(origin?: IQueryValue);
-        setDate(x: Date): void;
-        setTime(x: Date): void;
+        private formatInt(x, len);
+        private normalizeTime(x, days, maxTree);
+        isGuid(): boolean;
+        setDate(x: Date | null): void;
+        setTime(x: Date | null): void;
         setDuration(days: number, hours: number, minutes?: number, seconds?: number, milliseconds?: number): void;
-        setDateTimeLocal(x: Date): void;
-        setDateTimeUct(x: Date): void;
-        setDateTimeInvariant(x: Date): void;
-        setNumber(x: number): void;
-        setString(x: string): void;
-        toString(): string;
+        setDateTimeLocal(x: Date | null): string;
+        setDateTimeInvariant(x: Date | null): void;
+        setBoolean(x: boolean | null): void;
+        setNumber(x: number | null): void;
+        setString(x: string | null): void;
+        toString(): string | null;
     }
     interface IQueryFilterCondition extends IQueryValue {
-        operator: string;
-        property: string;
+        operator: string | null;
+        property: string | null;
         inv: boolean;
     }
     class QueryFilterCondition extends QueryValue implements IQueryFilterCondition {
-        operator: string;
-        property: string;
+        operator: string | null;
+        property: string | null;
         inv: boolean;
         constructor(origin?: IQueryFilterCondition);
-        toString(): string;
+        toString(): string | null;
     }
     interface IQuerySearch {
         value: IQueryFilterBooleanOperator;
@@ -148,6 +151,7 @@ declare namespace mvcct_odata {
         grouping: QueryGrouping;
         sorting: Array<QuerySortingCondition>;
         attachedTo: Endpoint;
+        static fromJson(x: string): QueryDescription;
         constructor(origin: IQueryDescription);
     }
 }
