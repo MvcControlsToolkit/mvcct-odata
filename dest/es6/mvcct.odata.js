@@ -192,7 +192,7 @@ var mvcct_odata;
             var val = this.value;
             switch (this.dateTimeType) {
                 case QueryValue.IsDateTime:
-                    if (val.charAt(val.length - 1) != "Z")
+                    if (val.charAt(val.length - 1).toUpperCase() != "Z")
                         return val + "Z";
                     else
                         return val;

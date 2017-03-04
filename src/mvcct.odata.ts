@@ -214,7 +214,7 @@ namespace mvcct_odata {
             switch(this.dateTimeType)
             {
                 case QueryValue.IsDateTime:
-                    if(val.charAt(val.length-1) != "Z") return val+"Z";
+                    if(val.charAt(val.length-1).toUpperCase() != "Z") return val+"Z";
                     else return val;
                 case QueryValue.IsDate:
                    return  val.split("T")[0];
