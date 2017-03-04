@@ -4,6 +4,7 @@ namespace mvcct_odata {
     const firstArgumentNull = "first argument must have a not null value";
     const anArgumentNull = "all arguments must have a not null value";
     const firstOperandNull = "first operand must have a not null value";
+    const notImplemented = "notImplemented";
     export abstract class QueryNode
     {
     }
@@ -16,8 +17,8 @@ namespace mvcct_odata {
     export interface IQueryFilterBooleanOperator
     {
         operator: number;
-        argument1: IQueryFilterCondition;
-        argument2: IQueryFilterCondition;
+        argument1: IQueryValue;
+        argument2: IQueryValue;
         child1: IQueryFilterBooleanOperator;
         child2: IQueryFilterBooleanOperator;
     }
@@ -33,8 +34,8 @@ namespace mvcct_odata {
         static NOT = 5;
 
         operator: number;
-        argument1: QueryFilterCondition;
-        argument2: QueryFilterCondition;
+        argument1: QueryValue;
+        argument2: QueryValue;
         child1: QueryFilterBooleanOperator;
         child2: QueryFilterBooleanOperator;
         // protected get arg1() : QueryFilterClause
@@ -47,18 +48,18 @@ namespace mvcct_odata {
         // }
         constructor(origin: IQueryFilterBooleanOperator);
         constructor(operator: number, 
-            a1: QueryFilterCondition|QueryFilterBooleanOperator,
-            a2?: QueryFilterCondition|QueryFilterBooleanOperator
+            a1: QueryValue|QueryFilterBooleanOperator,
+            a2?: QueryValue|QueryFilterBooleanOperator
             );
         constructor(y: number|IQueryFilterBooleanOperator, 
-            a1: QueryFilterCondition|QueryFilterBooleanOperator = null,
-            a2: QueryFilterCondition|QueryFilterBooleanOperator = null)
+            a1: QueryValue|QueryFilterBooleanOperator = null,
+            a2: QueryValue|QueryFilterBooleanOperator = null)
             {
                 super();
                 if(typeof y == "number")
                 {
                     if(!a1) throw firstOperandNull;
-                    if (typeof (<QueryFilterCondition>a1).inv == "undefined")
+                    if (typeof (<QueryFilterCondition>a1).dateTimeType == "undefined")
                     {
                         this.child1=(<QueryFilterBooleanOperator>a1);
                         this.argument1=null;
@@ -72,7 +73,7 @@ namespace mvcct_odata {
                         this.child2=null;
                         this.argument2=null;
                     }
-                    else if (typeof (<QueryFilterCondition>a2).inv == "undefined")
+                    else if (typeof (<QueryFilterCondition>a2).dateTimeType == "undefined")
                     {
                         this.child2=(<QueryFilterBooleanOperator>a2);
                         this.argument2=null;
@@ -85,19 +86,28 @@ namespace mvcct_odata {
                 }
                 else{
                     if(!y) throw firstArgumentNull;
-                    this.argument1= y.argument1 ? new QueryFilterCondition(y.argument1) : null;
-                    this.argument2= y.argument2 ? new QueryFilterCondition(y.argument2) : null;
+                    this.argument1= y.argument1 ? 
+                        (typeof (<QueryFilterCondition>y.argument1).inv != "undefined" ?
+                             new QueryFilterCondition(<QueryFilterCondition>y.argument1) 
+                             : new QueryValue(y.argument1))
+                        : null;
+                    this.argument2= y.argument2 ? 
+                        (typeof (<QueryFilterCondition>y.argument2).inv != "undefined" ?
+                             new QueryFilterCondition(<QueryFilterCondition>y.argument2) 
+                             : new QueryValue(y.argument2)) 
+                        : null;
                     this.child1=y.child1 ? new QueryFilterBooleanOperator(y.child1) : null;
                     this.child2=y.child2 ? new QueryFilterBooleanOperator(y.child2) : null;;
                     this.operator=y.operator;
                 }
             }
     }
-    export interface IQueryFilterCondition extends QueryFilterCondition
+    export interface IQueryValue
     {
-        
+        value: any;
+        dateTimeType: number;
     }
-    export class QueryFilterCondition  extends QueryFilterClause implements IQueryFilterCondition
+    export class QueryValue extends QueryFilterClause implements IQueryValue
     {
         static IsNotDateTime= 0;
         static IsDate = 1;
@@ -105,31 +115,93 @@ namespace mvcct_odata {
         static IsDateTime = 3;
         static IsDuration = 4;
 
-        operator: string;
-        property: string;
         value: any;
-        inv: boolean;
         dateTimeType: number;
-        constructor(origin: IQueryFilterCondition=null)
+        constructor(origin: IQueryValue=null)
         {
             super();
             if(origin)
             {
+                this.value = origin.value;
+                this.dateTimeType=origin.dateTimeType
+            }
+            else 
+            {
+                this.value = null;
+                this.dateTimeType=QueryFilterCondition.IsNotDateTime;
+            }
+        }
+        setDate(x: Date) {
+            this.dateTimeType = QueryValue.IsDate;
+            //to do;
+        }
+        setTime(x: Date) {
+            this.dateTimeType = QueryValue.IsTime;
+            //to do;
+        } 
+        setDuration(days: number, hours: number, minutes: number=0, 
+            seconds: number =0, milliseconds: number =0) {
+            this.dateTimeType = QueryValue.IsDuration;
+            //to do;
+        }
+        setDateTimeLocal(x: Date) {
+            this.dateTimeType = QueryValue.IsDateTime;
+            //to do;
+        }
+        setDateTimeUct(x: Date) {
+            this.dateTimeType = QueryValue.IsDateTime;
+            //to do;
+        }
+        setDateTimeInvariant(x: Date) {
+            this.dateTimeType = QueryValue.IsDateTime;
+            //to do;
+        }
+        setNumber(x: number) {
+            this.dateTimeType = QueryValue.IsNotDateTime;
+            this.value = x;
+        }
+        setString(x: string) {
+            this.dateTimeType = QueryValue.IsNotDateTime;
+            this.value=x;
+        }
+        toString() : string
+        {
+            throw notImplemented;
+        }
+
+    }
+    export interface IQueryFilterCondition extends IQueryValue
+    {
+        operator: string;
+        property: string;
+        inv: boolean;
+    }
+    export class QueryFilterCondition  extends QueryValue implements IQueryFilterCondition
+    {
+        operator: string;
+        property: string;
+        inv: boolean;
+        constructor(origin: IQueryFilterCondition=null)
+        {
+            super(origin);
+            if(origin)
+            {
                 this.operator=origin.operator;
                 this.inv=origin.inv;
-                this.value = origin.value;
                 this.property=origin.property;
-                this.dateTimeType=origin.dateTimeType
             }
             else 
             {
                 this.operator=null;
                 this.inv=false;
-                this.value = null;
                 this.property=null;
-                this.dateTimeType=QueryFilterCondition.IsNotDateTime;
             }
-        }   
+        }
+        toString(): string
+        {
+            var val = super.toString();
+            throw notImplemented;
+        }
     }
 
     /// free search
@@ -158,9 +230,10 @@ namespace mvcct_odata {
     }
 
     /// sorting
-    export interface IQuerySortingCondition extends QuerySortingCondition
+    export interface IQuerySortingCondition
     {
-
+        property: string;
+        down: boolean;
     }
     export class QuerySortingCondition  extends QueryNode implements IQuerySortingCondition
     {
@@ -188,9 +261,12 @@ namespace mvcct_odata {
     }
 
     ///grouping
-    export interface IQueryAggregation extends QueryAggregation
+    export interface IQueryAggregation
     {
-        
+         operator: string;
+        property: string;
+        isCount: boolean;
+        alias: string;
     }
 
     export class QueryAggregation   extends QueryNode implements IQueryAggregation

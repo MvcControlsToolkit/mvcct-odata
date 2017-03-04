@@ -23,6 +23,7 @@ var __extends = (this && this.__extends) || (function () {
         var firstArgumentNull = "first argument must have a not null value";
         var anArgumentNull = "all arguments must have a not null value";
         var firstOperandNull = "first operand must have a not null value";
+        var notImplemented = "notImplemented";
         var QueryNode = (function () {
             function QueryNode() {
             }
@@ -46,7 +47,7 @@ var __extends = (this && this.__extends) || (function () {
                 if (typeof y == "number") {
                     if (!a1)
                         throw firstOperandNull;
-                    if (typeof a1.inv == "undefined") {
+                    if (typeof a1.dateTimeType == "undefined") {
                         _this.child1 = a1;
                         _this.argument1 = null;
                     }
@@ -58,7 +59,7 @@ var __extends = (this && this.__extends) || (function () {
                         _this.child2 = null;
                         _this.argument2 = null;
                     }
-                    else if (typeof a2.inv == "undefined") {
+                    else if (typeof a2.dateTimeType == "undefined") {
                         _this.child2 = a2;
                         _this.argument2 = null;
                     }
@@ -70,8 +71,16 @@ var __extends = (this && this.__extends) || (function () {
                 else {
                     if (!y)
                         throw firstArgumentNull;
-                    _this.argument1 = y.argument1 ? new QueryFilterCondition(y.argument1) : null;
-                    _this.argument2 = y.argument2 ? new QueryFilterCondition(y.argument2) : null;
+                    _this.argument1 = y.argument1 ?
+                        (typeof y.argument1.inv != "undefined" ?
+                            new QueryFilterCondition(y.argument1)
+                            : new QueryValue(y.argument1))
+                        : null;
+                    _this.argument2 = y.argument2 ?
+                        (typeof y.argument2.inv != "undefined" ?
+                            new QueryFilterCondition(y.argument2)
+                            : new QueryValue(y.argument2))
+                        : null;
                     _this.child1 = y.child1 ? new QueryFilterBooleanOperator(y.child1) : null;
                     _this.child2 = y.child2 ? new QueryFilterBooleanOperator(y.child2) : null;
                     ;
@@ -88,34 +97,84 @@ var __extends = (this && this.__extends) || (function () {
         QueryFilterBooleanOperator.OR = 4;
         QueryFilterBooleanOperator.NOT = 5;
         mvcct_odata.QueryFilterBooleanOperator = QueryFilterBooleanOperator;
-        var QueryFilterCondition = (function (_super) {
-            __extends(QueryFilterCondition, _super);
-            function QueryFilterCondition(origin) {
+        var QueryValue = (function (_super) {
+            __extends(QueryValue, _super);
+            function QueryValue(origin) {
                 if (origin === void 0) { origin = null; }
                 var _this = _super.call(this) || this;
                 if (origin) {
-                    _this.operator = origin.operator;
-                    _this.inv = origin.inv;
                     _this.value = origin.value;
-                    _this.property = origin.property;
                     _this.dateTimeType = origin.dateTimeType;
                 }
                 else {
-                    _this.operator = null;
-                    _this.inv = false;
                     _this.value = null;
-                    _this.property = null;
                     _this.dateTimeType = QueryFilterCondition.IsNotDateTime;
                 }
                 return _this;
             }
-            return QueryFilterCondition;
+            QueryValue.prototype.setDate = function (x) {
+                this.dateTimeType = QueryValue.IsDate;
+            };
+            QueryValue.prototype.setTime = function (x) {
+                this.dateTimeType = QueryValue.IsTime;
+            };
+            QueryValue.prototype.setDuration = function (days, hours, minutes, seconds, milliseconds) {
+                if (minutes === void 0) { minutes = 0; }
+                if (seconds === void 0) { seconds = 0; }
+                if (milliseconds === void 0) { milliseconds = 0; }
+                this.dateTimeType = QueryValue.IsDuration;
+            };
+            QueryValue.prototype.setDateTimeLocal = function (x) {
+                this.dateTimeType = QueryValue.IsDateTime;
+            };
+            QueryValue.prototype.setDateTimeUct = function (x) {
+                this.dateTimeType = QueryValue.IsDateTime;
+            };
+            QueryValue.prototype.setDateTimeInvariant = function (x) {
+                this.dateTimeType = QueryValue.IsDateTime;
+            };
+            QueryValue.prototype.setNumber = function (x) {
+                this.dateTimeType = QueryValue.IsNotDateTime;
+                this.value = x;
+            };
+            QueryValue.prototype.setString = function (x) {
+                this.dateTimeType = QueryValue.IsNotDateTime;
+                this.value = x;
+            };
+            QueryValue.prototype.toString = function () {
+                throw notImplemented;
+            };
+            return QueryValue;
         }(QueryFilterClause));
-        QueryFilterCondition.IsNotDateTime = 0;
-        QueryFilterCondition.IsDate = 1;
-        QueryFilterCondition.IsTime = 2;
-        QueryFilterCondition.IsDateTime = 3;
-        QueryFilterCondition.IsDuration = 4;
+        QueryValue.IsNotDateTime = 0;
+        QueryValue.IsDate = 1;
+        QueryValue.IsTime = 2;
+        QueryValue.IsDateTime = 3;
+        QueryValue.IsDuration = 4;
+        mvcct_odata.QueryValue = QueryValue;
+        var QueryFilterCondition = (function (_super) {
+            __extends(QueryFilterCondition, _super);
+            function QueryFilterCondition(origin) {
+                if (origin === void 0) { origin = null; }
+                var _this = _super.call(this, origin) || this;
+                if (origin) {
+                    _this.operator = origin.operator;
+                    _this.inv = origin.inv;
+                    _this.property = origin.property;
+                }
+                else {
+                    _this.operator = null;
+                    _this.inv = false;
+                    _this.property = null;
+                }
+                return _this;
+            }
+            QueryFilterCondition.prototype.toString = function () {
+                var val = _super.prototype.toString.call(this);
+                throw notImplemented;
+            };
+            return QueryFilterCondition;
+        }(QueryValue));
         mvcct_odata.QueryFilterCondition = QueryFilterCondition;
         var QuerySearch = (function (_super) {
             __extends(QuerySearch, _super);

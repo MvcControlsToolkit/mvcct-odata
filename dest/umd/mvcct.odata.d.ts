@@ -5,8 +5,8 @@ declare namespace mvcct_odata {
     }
     interface IQueryFilterBooleanOperator {
         operator: number;
-        argument1: IQueryFilterCondition;
-        argument2: IQueryFilterCondition;
+        argument1: IQueryValue;
+        argument2: IQueryValue;
         child1: IQueryFilterBooleanOperator;
         child2: IQueryFilterBooleanOperator;
     }
@@ -18,27 +18,47 @@ declare namespace mvcct_odata {
         static OR: number;
         static NOT: number;
         operator: number;
-        argument1: QueryFilterCondition;
-        argument2: QueryFilterCondition;
+        argument1: QueryValue;
+        argument2: QueryValue;
         child1: QueryFilterBooleanOperator;
         child2: QueryFilterBooleanOperator;
         constructor(origin: IQueryFilterBooleanOperator);
-        constructor(operator: number, a1: QueryFilterCondition | QueryFilterBooleanOperator, a2?: QueryFilterCondition | QueryFilterBooleanOperator);
+        constructor(operator: number, a1: QueryValue | QueryFilterBooleanOperator, a2?: QueryValue | QueryFilterBooleanOperator);
     }
-    interface IQueryFilterCondition extends QueryFilterCondition {
+    interface IQueryValue {
+        value: any;
+        dateTimeType: number;
     }
-    class QueryFilterCondition extends QueryFilterClause implements IQueryFilterCondition {
+    class QueryValue extends QueryFilterClause implements IQueryValue {
         static IsNotDateTime: number;
         static IsDate: number;
         static IsTime: number;
         static IsDateTime: number;
         static IsDuration: number;
+        value: any;
+        dateTimeType: number;
+        constructor(origin?: IQueryValue);
+        setDate(x: Date): void;
+        setTime(x: Date): void;
+        setDuration(days: number, hours: number, minutes?: number, seconds?: number, milliseconds?: number): void;
+        setDateTimeLocal(x: Date): void;
+        setDateTimeUct(x: Date): void;
+        setDateTimeInvariant(x: Date): void;
+        setNumber(x: number): void;
+        setString(x: string): void;
+        toString(): string;
+    }
+    interface IQueryFilterCondition extends IQueryValue {
         operator: string;
         property: string;
-        value: any;
         inv: boolean;
-        dateTimeType: number;
+    }
+    class QueryFilterCondition extends QueryValue implements IQueryFilterCondition {
+        operator: string;
+        property: string;
+        inv: boolean;
         constructor(origin?: IQueryFilterCondition);
+        toString(): string;
     }
     interface IQuerySearch {
         value: IQueryFilterBooleanOperator;
@@ -47,7 +67,9 @@ declare namespace mvcct_odata {
         value: QueryFilterBooleanOperator;
         constructor(origin: IQuerySearch | IQueryFilterBooleanOperator);
     }
-    interface IQuerySortingCondition extends QuerySortingCondition {
+    interface IQuerySortingCondition {
+        property: string;
+        down: boolean;
     }
     class QuerySortingCondition extends QueryNode implements IQuerySortingCondition {
         property: string;
@@ -55,7 +77,11 @@ declare namespace mvcct_odata {
         constructor(x: IQuerySortingCondition);
         constructor(property: string, down?: boolean);
     }
-    interface IQueryAggregation extends QueryAggregation {
+    interface IQueryAggregation {
+        operator: string;
+        property: string;
+        isCount: boolean;
+        alias: string;
     }
     class QueryAggregation extends QueryNode implements IQueryAggregation {
         static count: string;
