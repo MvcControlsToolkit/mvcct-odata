@@ -476,13 +476,13 @@ namespace mvcct_odata {
         {
             if (!this.keys == null || !this.keys.length) return null;
             if (this.keys.length == 1) return this.encodeProperty(this.keys[0]);
-            return this.keys.map(x => this.encodeProperty(x)).join(',');  
+            return this.keys.filter(x => x).map(x => this.encodeProperty(x)).join(',');  
         }
         private encodeAggrgates(): string|null
         {
             if (!this.aggregations|| !this.aggregations.length) return null;
             if (this.aggregations.length) return this.aggregations[0].toString();
-            return this.aggregations.map(x => x.toString()).join(',');
+            return this.aggregations.map(x => x.toString()).filter(x => x).join(',');
 
         }
         toString(): string|null
@@ -643,7 +643,7 @@ namespace mvcct_odata {
                 sb.push(this.urlEncode(apply)); 
             }
             var sorting = this.sorting ?
-                this.sorting.map(x => x.toString()).join(',') : null;
+                this.sorting.map(x => x.toString()).filter(x => x).join(',') : null;
             if (sorting){
                 if(sb.length) sb.push("&");
                 sb.push(QueryDescription.sortingName);

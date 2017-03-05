@@ -1,4 +1,34 @@
 {
+  "name": "mvcct-odata",
+  "version": "1.0.0",
+  "description": "JavaScript OData client",
+  "main": "dest/umd/mvcct.odata.min.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MvcControlsToolkit/mvcct-odata.git"
+  },
+  "keywords": [
+     "odata",
+     "typescript",
+     "client",
+     "javascript",
+     "mvccontrolstoolkit-packages"
+  ],
+  "author": "Mvc Controls Toolkit Team",
+  "license": "https://github.com/MvcControlsToolkit/mvcct-odata/blob/master/LICENSE.txt",
+  "bugs": {
+    "url": "https://github.com/MvcControlsToolkit/mvcct-odata/issues"
+  },
+  "homepage": "https://github.com/MvcControlsToolkit/mvcct-odata",
+  "files":[
+    "dest/es6",
+    "dest/global",
+    "dest/umd",
+    "proc/es6",
+    "proc/global",
+    "proc/umd",
+    "LICENSE.txt"
+  ],
   "dependencies": {},
   "devDependencies": {
     "jasmine": "^2.5.3",

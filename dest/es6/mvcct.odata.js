@@ -423,14 +423,14 @@ var mvcct_odata;
                 return null;
             if (this.keys.length == 1)
                 return this.encodeProperty(this.keys[0]);
-            return this.keys.map(function (x) { return _this.encodeProperty(x); }).join(',');
+            return this.keys.filter(function (x) { return x; }).map(function (x) { return _this.encodeProperty(x); }).join(',');
         };
         QueryGrouping.prototype.encodeAggrgates = function () {
             if (!this.aggregations || !this.aggregations.length)
                 return null;
             if (this.aggregations.length)
                 return this.aggregations[0].toString();
-            return this.aggregations.map(function (x) { return x.toString(); }).join(',');
+            return this.aggregations.map(function (x) { return x.toString(); }).filter(function (x) { return x; }).join(',');
         };
         QueryGrouping.prototype.toString = function () {
             var groups = this.encodeGroups();
@@ -536,7 +536,7 @@ var mvcct_odata;
                 sb.push(this.urlEncode(apply));
             }
             var sorting = this.sorting ?
-                this.sorting.map(function (x) { return x.toString(); }).join(',') : null;
+                this.sorting.map(function (x) { return x.toString(); }).filter(function (x) { return x; }).join(',') : null;
             if (sorting) {
                 if (sb.length)
                     sb.push("&");
