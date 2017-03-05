@@ -1,5 +1,7 @@
 declare namespace mvcct_odata {
     abstract class QueryNode {
+        encodeProperty(name: string): string;
+        abstract toString(): string | null;
     }
     abstract class QueryFilterClause extends QueryNode {
     }
@@ -24,6 +26,7 @@ declare namespace mvcct_odata {
         child2: QueryFilterBooleanOperator;
         constructor(origin: IQueryFilterBooleanOperator);
         constructor(operator: number, a1: QueryValue | QueryFilterBooleanOperator, a2?: QueryValue | QueryFilterBooleanOperator);
+        toString(): string | null;
     }
     interface IQueryValue {
         value: any;
@@ -57,6 +60,15 @@ declare namespace mvcct_odata {
         inv: boolean;
     }
     class QueryFilterCondition extends QueryValue implements IQueryFilterCondition {
+        static eq: string;
+        static ne: string;
+        static gt: string;
+        static lt: string;
+        static ge: string;
+        static le: string;
+        static startswith: string;
+        static endswith: string;
+        static contains: string;
         operator: string | null;
         property: string | null;
         inv: boolean;
@@ -69,6 +81,7 @@ declare namespace mvcct_odata {
     class QuerySearch extends QueryNode implements IQuerySearch {
         value: QueryFilterBooleanOperator;
         constructor(origin: IQuerySearch | IQueryFilterBooleanOperator);
+        toString(): string | null;
     }
     interface IQuerySortingCondition {
         property: string;
@@ -79,6 +92,7 @@ declare namespace mvcct_odata {
         down: boolean;
         constructor(x: IQuerySortingCondition);
         constructor(property: string, down?: boolean);
+        toString(): string | null;
     }
     interface IQueryAggregation {
         operator: string;
@@ -98,6 +112,7 @@ declare namespace mvcct_odata {
         alias: string;
         constructor(x: IQueryAggregation);
         constructor(operator: string, property: string, alias: string);
+        toString(): string | null;
     }
     interface IQueryGrouping {
         keys: Array<string>;
@@ -107,6 +122,9 @@ declare namespace mvcct_odata {
         keys: Array<string>;
         aggregations: Array<QueryAggregation>;
         constructor(origin?: IQueryGrouping);
+        private encodeGroups();
+        private encodeAggrgates();
+        toString(): string | null;
     }
     interface IEndpoint extends Endpoint {
     }
@@ -153,6 +171,9 @@ declare namespace mvcct_odata {
         attachedTo: Endpoint;
         static fromJson(x: string): QueryDescription;
         constructor(origin: IQueryDescription);
+        queryString(): string | null;
+        addToUrl(url: string | null): string | null;
+        toString(): string | null;
     }
 }
 declare namespace mvcct {

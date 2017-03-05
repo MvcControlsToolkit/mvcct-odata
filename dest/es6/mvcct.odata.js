@@ -18,6 +18,11 @@ var mvcct_odata;
     var QueryNode = (function () {
         function QueryNode() {
         }
+        QueryNode.prototype.encodeProperty = function (name) {
+            if (name == null)
+                return null;
+            return name.replace(/\./g, '/');
+        };
         return QueryNode;
     }());
     mvcct_odata.QueryNode = QueryNode;
@@ -79,6 +84,34 @@ var mvcct_odata;
             }
             return _this;
         }
+        QueryFilterBooleanOperator.prototype.toString = function () {
+            var arg1 = this.argument1 || this.child1;
+            var arg2 = this.argument2 || this.child2;
+            if (!arg1 && !arg2)
+                return null;
+            if (this.operator == QueryFilterBooleanOperator.not)
+                return "(not " + (arg1 || arg2).toString() + ")";
+            else if (this.operator == QueryFilterBooleanOperator.NOT)
+                return "(not " + (arg1 || arg2).toString() + ")";
+            else if (!arg1)
+                return arg2.toString();
+            else if (!arg2)
+                return arg1.toString();
+            var sarg1 = arg1.toString();
+            var sarg2 = arg2.toString();
+            if (!sarg1)
+                return sarg2 || null;
+            if (!sarg2)
+                return sarg1 || null;
+            else if (this.operator == QueryFilterBooleanOperator.and)
+                return "(" + sarg1 + " and " + sarg2 + ")";
+            else if (this.operator == QueryFilterBooleanOperator.AND)
+                return "(" + sarg1 + " AND " + sarg2 + ")";
+            else if (this.operator == QueryFilterBooleanOperator.OR)
+                return "(" + sarg1 + " OR " + sarg2 + ")";
+            else
+                return "(" + sarg1 + " or " + sarg2 + ")";
+        };
         return QueryFilterBooleanOperator;
     }(QueryFilterClause));
     QueryFilterBooleanOperator.and = 0;
@@ -142,7 +175,7 @@ var mvcct_odata;
             this.value = this.formatInt(x.getHours(), 2) +
                 ":" + this.formatInt(x.getMinutes(), 2) +
                 ":" + this.formatInt(x.getSeconds(), 2) +
-                "." + this.formatInt(x.getUTCMilliseconds(), 3);
+                "." + this.formatInt(x.getMilliseconds(), 3);
         };
         QueryValue.prototype.setDuration = function (days, hours, minutes, seconds, milliseconds) {
             if (minutes === void 0) { minutes = 0; }
@@ -242,14 +275,35 @@ var mvcct_odata;
             var val = _super.prototype.toString.call(this);
             if (val === null)
                 return null;
-            if (this.property && this.dateTimeType == QueryValue.IsNotDateTime &&
+            if (!this.property)
+                return val;
+            if (this.dateTimeType == QueryValue.IsNotDateTime &&
                 typeof val == "string" &&
                 !this.isGuid())
                 val = "'" + val + "'";
-            throw notImplemented;
+            switch (this.operator) {
+                case QueryFilterCondition.startswith:
+                case QueryFilterCondition.endswith:
+                case QueryFilterCondition.contains:
+                    if (this.inv)
+                        return this.operator + "(" + val + "," + this.encodeProperty(this.property) + ")";
+                    else
+                        return this.operator + "(" + this.encodeProperty(this.property) + "," + val + ")";
+                default:
+                    return "(" + this.encodeProperty(this.property) + " " + this.operator + " " + val + ")";
+            }
         };
         return QueryFilterCondition;
     }(QueryValue));
+    QueryFilterCondition.eq = "eq";
+    QueryFilterCondition.ne = "ne";
+    QueryFilterCondition.gt = "gt";
+    QueryFilterCondition.lt = "lt";
+    QueryFilterCondition.ge = "ge";
+    QueryFilterCondition.le = "le";
+    QueryFilterCondition.startswith = "startswith";
+    QueryFilterCondition.endswith = "endswith";
+    QueryFilterCondition.contains = "contains";
     mvcct_odata.QueryFilterCondition = QueryFilterCondition;
     var QuerySearch = (function (_super) {
         __extends(QuerySearch, _super);
@@ -266,6 +320,12 @@ var mvcct_odata;
                     : null;
             return _this;
         }
+        QuerySearch.prototype.toString = function () {
+            if (!this.value)
+                return null;
+            else
+                return this.value.toString();
+        };
         return QuerySearch;
     }(QueryNode));
     mvcct_odata.QuerySearch = QuerySearch;
@@ -286,6 +346,14 @@ var mvcct_odata;
             }
             return _this;
         }
+        QuerySortingCondition.prototype.toString = function () {
+            if (!this.property)
+                return null;
+            if (this.down)
+                return this.encodeProperty(this.property) + " desc";
+            else
+                return this.encodeProperty(this.property) + " asc";
+        };
         return QuerySortingCondition;
     }(QueryNode));
     mvcct_odata.QuerySortingCondition = QuerySortingCondition;
@@ -312,6 +380,13 @@ var mvcct_odata;
             }
             return _this;
         }
+        QueryAggregation.prototype.toString = function () {
+            if (!this.property || !this.operator || !this.alias)
+                return null;
+            return this.encodeProperty(this.property) +
+                " with " + this.operator +
+                " as " + this.alias;
+        };
         return QueryAggregation;
     }(QueryNode));
     QueryAggregation.count = "countdistinct";
@@ -342,6 +417,31 @@ var mvcct_odata;
             }
             return _this;
         }
+        QueryGrouping.prototype.encodeGroups = function () {
+            var _this = this;
+            if (!this.keys == null || !this.keys.length)
+                return null;
+            if (this.keys.length == 1)
+                return this.encodeProperty(this.keys[0]);
+            return this.keys.map(function (x) { return _this.encodeProperty(x); }).join(',');
+        };
+        QueryGrouping.prototype.encodeAggrgates = function () {
+            if (!this.aggregations || !this.aggregations.length)
+                return null;
+            if (this.aggregations.length)
+                return this.aggregations[0].toString();
+            return this.aggregations.map(function (x) { return x.toString(); }).join(',');
+        };
+        QueryGrouping.prototype.toString = function () {
+            var groups = this.encodeGroups();
+            if (!groups)
+                return null;
+            var aggs = this.encodeAggrgates();
+            if (!aggs)
+                return "groupby((" + groups + "))";
+            else
+                return "groupby((" + groups + "),aggregate(" + aggs + ")";
+        };
         return QueryGrouping;
     }(QueryNode));
     mvcct_odata.QueryGrouping = QueryGrouping;
@@ -408,6 +508,71 @@ var mvcct_odata;
             if (!x)
                 return null;
             return new QueryDescription(JSON.parse(x));
+        };
+        QueryDescription.prototype.queryString = function () {
+            var sb = new Array();
+            var search = this.search ? this.search.toString() : null;
+            ;
+            var filter = null;
+            if (search) {
+                sb.push(QueryDescription.searchName);
+                sb.push("=");
+                sb.push(this.urlEncode(search));
+            }
+            else {
+                filter = this.filter ? this.filter.toString() : null;
+                if (filter) {
+                    sb.push(QueryDescription.filterName);
+                    sb.push("=");
+                    sb.push(this.urlEncode(filter));
+                }
+            }
+            var apply = this.grouping ? this.grouping.toString() : null;
+            if (apply) {
+                if (sb.length)
+                    sb.push("&");
+                sb.push(QueryDescription.applyName);
+                sb.push("=");
+                sb.push(this.urlEncode(apply));
+            }
+            var sorting = this.sorting ?
+                this.sorting.map(function (x) { return x.toString(); }).join(',') : null;
+            if (sorting) {
+                if (sb.length)
+                    sb.push("&");
+                sb.push(QueryDescription.sortingName);
+                sb.push("=");
+                sb.push(this.urlEncode(sorting));
+            }
+            if (this.skip > 0) {
+                if (sb.length)
+                    sb.push("&");
+                sb.push(QueryDescription.skipName);
+                sb.push("=");
+                sb.push(this.skip + "");
+            }
+            if (this.take && this.take > 0) {
+                if (sb.length)
+                    sb.push("&");
+                sb.push(QueryDescription.topName);
+                sb.push("=");
+                sb.push(this.take + "");
+            }
+            return sb.length ? sb.join("") : null;
+        };
+        QueryDescription.prototype.addToUrl = function (url) {
+            if (!url)
+                url = '';
+            var query = this.queryString();
+            if (!query || !query.trim())
+                return url;
+            if (url.indexOf('?') >= 0)
+                return url + "&" + query;
+            else
+                return url + "?" + query;
+        };
+        QueryDescription.prototype.toString = function () {
+            return this.addToUrl(this.attachedTo ? this.attachedTo.baseUrl : null);
         };
         return QueryDescription;
     }());

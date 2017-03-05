@@ -8,6 +8,12 @@ namespace mvcct_odata {
     const guidMatch = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
     export abstract class QueryNode
     {
+        encodeProperty(name: string): string
+        {
+            if (name == null) return null;
+            return name.replace(/\./g, '/');
+        }
+        abstract toString() : string|null;
     }
 
     /// filtering 
@@ -102,6 +108,30 @@ namespace mvcct_odata {
                     this.operator=y.operator;
                 }
             }
+            toString() : string|null
+            {
+                var arg1= this.argument1 || this.child1;
+                var arg2= this.argument2 || this.child2;
+                if(!arg1 && !arg2) return null;
+                if (this.operator == QueryFilterBooleanOperator.not) 
+                    return "(not "+(arg1 || arg2).toString()+")";
+                else if (this.operator == QueryFilterBooleanOperator.NOT) 
+                    return "(not "+(arg1 || arg2).toString()+")";
+                else if (!arg1) return arg2.toString();
+                else if (!arg2) return arg1.toString();
+                var sarg1 = arg1.toString();
+                var sarg2 = arg2.toString();
+                if (!sarg1) return sarg2 || null;
+                if (!sarg2) return sarg1 || null;
+                else if (this.operator == QueryFilterBooleanOperator.and) 
+                    return "("+sarg1+" and " +sarg2+")";
+                else if (this.operator == QueryFilterBooleanOperator.AND) 
+                    return "("+sarg1+" AND " +sarg2+")";
+                else if (this.operator == QueryFilterBooleanOperator.OR) 
+                    return "("+sarg1+" OR " +sarg2+")";
+                else 
+                    return "("+sarg1+" or " +sarg2+")";
+            }
     }
     export interface IQueryValue
     {
@@ -166,7 +196,7 @@ namespace mvcct_odata {
             this.value=this.formatInt(x.getHours(), 2) +
                 ":"+this.formatInt(x.getMinutes(), 2) +
                 ":"+this.formatInt(x.getSeconds(), 2) +
-                "."+this.formatInt(x.getUTCMilliseconds(), 3);
+                "."+this.formatInt(x.getMilliseconds(), 3);
         } 
         setDuration(days: number, hours: number, minutes: number=0, 
             seconds: number =0, milliseconds: number =0) {
@@ -244,6 +274,16 @@ namespace mvcct_odata {
     }
     export class QueryFilterCondition  extends QueryValue implements IQueryFilterCondition
     {
+        static eq= "eq";
+        static ne = "ne";
+        static gt = "gt";
+        static lt = "lt";
+        static ge = "ge";
+        static le = "le";
+        static startswith = "startswith";
+        static endswith = "endswith";
+        static contains = "contains";
+
         operator: string|null;
         property: string|null;
         inv: boolean;
@@ -267,11 +307,23 @@ namespace mvcct_odata {
         {
             var val=super.toString();
             if (val === null) return null;
-            if(this.property &&  this.dateTimeType == QueryValue.IsNotDateTime &&
+            if(!this.property) return val;
+            if(this.dateTimeType == QueryValue.IsNotDateTime &&
                 typeof val == "string" &&
                 !this.isGuid()
             ) val = "'"+val+"'";
-            throw notImplemented;
+            
+            switch(this.operator)
+            {
+                case QueryFilterCondition.startswith:
+                case QueryFilterCondition.endswith:
+                case QueryFilterCondition.contains:
+                    if (this.inv) return this.operator+"("+val+","+this.encodeProperty(this.property)+")";
+                    else return this.operator+"("+this.encodeProperty(this.property)+","+val+")";
+                default:
+                    return "("+this.encodeProperty(this.property)+" "+this.operator+" "+val+")";
+
+            }
         }
     }
 
@@ -297,6 +349,11 @@ namespace mvcct_odata {
                this.value = (<IQuerySearch>origin).value ?   
                     new QueryFilterBooleanOperator((<IQuerySearch>origin).value) 
                     : null;
+        }
+        toString(): string|null
+        {
+            if(!this.value) return null;
+            else return this.value.toString();
         }
     }
 
@@ -328,6 +385,12 @@ namespace mvcct_odata {
                 this.down=y.down;
             }
             
+        }
+        toString(): string|null
+        {
+            if(!this.property) return null;
+            if(this.down) return this.encodeProperty(this.property)+" desc";
+            else return this.encodeProperty(this.property)+" asc";
         }
     }
 
@@ -373,6 +436,13 @@ namespace mvcct_odata {
                 this.property=y.property;
             }
         }
+        toString(): string|null
+        {
+            if(!this.property || !this.operator || !this.alias) return null;
+            return this.encodeProperty(this.property) + 
+                " with " + this.operator +
+                " as " + this.alias;
+        }
     }
 
     export interface IQueryGrouping 
@@ -401,6 +471,29 @@ namespace mvcct_odata {
                     .map(x => new QueryAggregation(x));
                 else this.aggregations=new Array<QueryAggregation>();
             }
+        }
+        private encodeGroups(): string|null
+        {
+            if (!this.keys == null || !this.keys.length) return null;
+            if (this.keys.length == 1) return this.encodeProperty(this.keys[0]);
+            return this.keys.map(x => this.encodeProperty(x)).join(',');  
+        }
+        private encodeAggrgates(): string|null
+        {
+            if (!this.aggregations|| !this.aggregations.length) return null;
+            if (this.aggregations.length) return this.aggregations[0].toString();
+            return this.aggregations.map(x => x.toString()).join(',');
+
+        }
+        toString(): string|null
+        {
+            var groups = this.encodeGroups();
+            if (!groups) return null;
+
+            var aggs = this.encodeAggrgates();
+
+            if (!aggs) return "groupby(("+groups+"))";
+            else return "groupby(("+groups+"),aggregate("+aggs+")";
         }
     }
 
@@ -523,7 +616,66 @@ namespace mvcct_odata {
                 this.attachedTo=null;
             }
         }
-
+        public queryString(): string|null
+        {
+            var sb = new Array<string>();
+            var search = this.search ? this.search.toString() : null;;
+            var filter: string = null;
+            if(search){
+                sb.push(QueryDescription.searchName);
+                sb.push("=");
+                sb.push(this.urlEncode(search));
+            }
+            else
+            {
+                filter = this.filter ? this.filter.toString() : null;
+                if(filter){
+                    sb.push(QueryDescription.filterName);
+                    sb.push("=");
+                    sb.push(this.urlEncode(filter));
+                }
+            }
+            var apply = this.grouping ? this.grouping.toString() : null;
+            if(apply){
+                if(sb.length) sb.push("&");
+                sb.push(QueryDescription.applyName);
+                sb.push("=");
+                sb.push(this.urlEncode(apply)); 
+            }
+            var sorting = this.sorting ?
+                this.sorting.map(x => x.toString()).join(',') : null;
+            if (sorting){
+                if(sb.length) sb.push("&");
+                sb.push(QueryDescription.sortingName);
+                sb.push("=");
+                sb.push(this.urlEncode(sorting)); 
+            }
+            if(this.skip>0){
+                if(sb.length) sb.push("&");
+                sb.push(QueryDescription.skipName);
+                sb.push("=");
+                sb.push(this.skip+""); 
+            }
+            if(this.take && this.take>0){
+                if(sb.length) sb.push("&");
+                sb.push(QueryDescription.topName);
+                sb.push("=");
+                sb.push(this.take+""); 
+            }
+            return sb.length ? sb.join("") : null;
+        }
+        public addToUrl(url: string|null): string|null
+        {
+            if (!url) url = '';
+            var query = this.queryString();
+            if (!query || !query.trim()) return url;
+            if (url.indexOf('?')>=0) return url + "&" + query;
+            else return url + "?" + query;
+        }
+        toString(): string|null
+        {
+            return this.addToUrl(this.attachedTo? this.attachedTo.baseUrl : null);
+        }
     } 
     
 
