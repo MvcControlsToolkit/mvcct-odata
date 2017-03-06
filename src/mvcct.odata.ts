@@ -6,6 +6,92 @@ namespace mvcct_odata {
     const firstOperandNull = "first operand must have a not null value";
     const notImplemented = "notImplemented";
     const guidMatch = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+    /// Utilities
+    export interface IAggregation{
+        property: string|null;
+        alias: string;
+        initialize: (x: IAggregation) => void;
+        update: (val: any, x: IAggregation) => void;
+        result: (x: IAggregation) => any;
+        counters: number[];
+        set?: {[x: string]: boolean}
+    }
+    function updateCountDistinct(val: any, agg: IAggregation){
+        val=val+'';
+        if(!agg.set[val]) {
+            agg.counters[0]=agg.counters[0]+1;
+            agg.set[val]=true;
+        }
+    }
+    class aggregationDictionary{
+        value: Array<any>;
+        child: {[x: string]: aggregationDictionary}|null|undefined; 
+        constructor()
+        {
+            this.value=[];
+            this.child={};
+        }
+        add(properties: string[], row: any)
+        {
+            this.addInternal(properties.map(x => row[x]+''), 0, row);
+        }
+        protected addInternal(keys: string[], index: number, row: any)
+        {
+            if(index == keys.length-1) this.value.push(row);
+            else {
+                let next=this.child[keys[index]];
+                if(!next) this.child[keys[index]]=next= new aggregationDictionary();
+                next.addInternal(keys, index+1, row);
+            }
+        }
+        aggregate(depth: number, properties: string[], aggregations: Array<IAggregation>) : Array<any>
+        {
+            if(depth>0){
+                let res : Array<any> =[];
+                for(let key in this.child)
+                {
+                    Array.prototype.push.apply(res, 
+                        this.child[key].aggregate(depth-1, properties, aggregations));
+                }
+            }
+            else{
+                if(!this.value.length) return [];
+                aggregations.forEach(agg =>{agg.initialize(agg)});
+                let res: any={};
+                 properties.forEach(key => {
+                        res[key]=(<any>(this.value))[key];
+                    });
+                for(let o of this.value)
+                {
+                    aggregations.forEach(agg =>{agg.update(o[agg.property], agg)});
+                }
+                aggregations.forEach(agg =>{res[agg.alias]=agg.result(agg)});
+                return [res];
+            }
+        }
+    }
+
+    function composition<T>(funcs: Array<(x: Array<T>) => Array<T>>): (x: Array<T>) => Array<T>
+    {
+        return (x: Array<T>) => {
+            for(let f of funcs)
+                x=f(x);
+                return x;
+            };
+    }
+    function lexicalOrder(funcs: Array<(o1: any, o2: any) => number>): (o1: any, o2: any) => number
+    {
+        return (o1: any, o2: any) =>{
+            let res=0;
+            for(let f of funcs){
+                let x = f(o1, o2);
+                if(x != 0) return x;
+            }
+            return res;
+        };
+    }
+    ///
     export abstract class QueryNode
     {
         encodeProperty(name: string): string
@@ -14,12 +100,21 @@ namespace mvcct_odata {
             return name.replace(/\./g, '/');
         }
         abstract toString() : string|null;
+        getProperty(o: any, p: string): any
+        {
+            var path=p.split('.');
+            var i=0;
+            while(typeof o === "object" && i<path.length)
+                o=o[path[i++]];
+            if(o && typeof o.getMonth === 'function') o=o.getTime();
+            return o;
+        }
     }
 
     /// filtering 
     export abstract class QueryFilterClause extends QueryNode
     {
-        
+        abstract toQuery() : ((o: any) => boolean)|null;
     }  
     export interface IQueryFilterBooleanOperator
     {
@@ -32,27 +127,20 @@ namespace mvcct_odata {
     export class QueryFilterBooleanOperator extends QueryFilterClause implements IQueryFilterBooleanOperator
     {
         //boolean operators
-        static and = 0;
-        static or = 1;
-        static not = 2;
+        static readonly and = 0;
+        static readonly or = 1;
+        static readonly not = 2;
         //free search operators
-        static AND = 3;
-        static OR = 4;
-        static NOT = 5;
+        static readonly AND = 3;
+        static readonly OR = 4;
+        static readonly NOT = 5;
 
         operator: number;
         argument1: QueryValue;
         argument2: QueryValue;
         child1: QueryFilterBooleanOperator;
         child2: QueryFilterBooleanOperator;
-        // protected get arg1() : QueryFilterClause
-        // {
-        //     return this.argument1 || this.child1;
-        // }
-        // protected get arg2() : QueryFilterClause
-        // {
-        //     return this.argument2 || this.child2;
-        // }
+        
         constructor(origin: IQueryFilterBooleanOperator);
         constructor(operator: number, 
             a1: QueryValue|QueryFilterBooleanOperator,
@@ -116,14 +204,14 @@ namespace mvcct_odata {
                 if (this.operator == QueryFilterBooleanOperator.not) 
                     return "(not "+(arg1 || arg2).toString()+")";
                 else if (this.operator == QueryFilterBooleanOperator.NOT) 
-                    return "(not "+(arg1 || arg2).toString()+")";
+                    return "(NOT "+(arg1 || arg2).toString()+")";
                 else if (!arg1) return arg2.toString();
                 else if (!arg2) return arg1.toString();
                 var sarg1 = arg1.toString();
                 var sarg2 = arg2.toString();
                 if (!sarg1) return sarg2 || null;
                 if (!sarg2) return sarg1 || null;
-                else if (this.operator == QueryFilterBooleanOperator.and) 
+                if (this.operator == QueryFilterBooleanOperator.and) 
                     return "("+sarg1+" and " +sarg2+")";
                 else if (this.operator == QueryFilterBooleanOperator.AND) 
                     return "("+sarg1+" AND " +sarg2+")";
@@ -131,6 +219,26 @@ namespace mvcct_odata {
                     return "("+sarg1+" OR " +sarg2+")";
                 else 
                     return "("+sarg1+" or " +sarg2+")";
+            }
+            toQuery() : ((o: any) => boolean)|null
+            {
+                var arg1= this.argument1 || this.child1;
+                var arg2= this.argument2 || this.child2;
+                if(!arg1 && !arg2) return null;
+                if (this.operator == QueryFilterBooleanOperator.not || 
+                    this.operator == QueryFilterBooleanOperator.NOT) 
+                    return (o: any) => !(arg1 || arg2).toQuery()(o);
+                else if (!arg1) return arg2.toQuery();
+                else if (!arg2) return arg1.toQuery();
+                var qarg1 = arg1.toQuery();
+                var qarg2 = arg2.toQuery();
+                if (!qarg1) return qarg2 || null;
+                if (!qarg2) return qarg1 || null;
+                else if (this.operator == QueryFilterBooleanOperator.and || 
+                          this.operator == QueryFilterBooleanOperator.AND)
+                    return (o: any) => arg1.toQuery()(o) && arg2.toQuery()(o);
+                else
+                   return  (o: any) => arg1.toQuery()(o) || arg2.toQuery()(o); 
             }
     }
     export interface IQueryValue
@@ -234,6 +342,49 @@ namespace mvcct_odata {
             this.dateTimeType = QueryValue.IsNotDateTime;
             this.value=x;
         }
+        getValue(): any{
+           if(this.value===null || typeof this.value == "undefined")
+                 return null;
+            else if(this.dateTimeType == QueryValue.IsNotDateTime)
+                return this.value;
+            let val = (<string>this.value);
+            switch(this.dateTimeType)
+            {
+                case QueryValue.IsDateTime:
+                    let dtParts = val.match(/\d+/g);
+                    if(val.charAt(val.length-1).toUpperCase() == "Z") 
+                        return new Date(Date.UTC(
+                            parseInt(dtParts[0]), parseInt(dtParts[1]), parseInt(dtParts[2]),
+                            parseInt(dtParts[3]), parseInt(dtParts[4]), parseInt(dtParts[5]), parseInt(dtParts[5])))
+                            .getTime();
+                    else
+                        return new Date(
+                            parseInt(dtParts[0]), parseInt(dtParts[1]), parseInt(dtParts[2]),
+                            parseInt(dtParts[3]), parseInt(dtParts[4]), parseInt(dtParts[5]), parseInt(dtParts[5]))
+                            .getTime();
+                case QueryValue.IsDate:
+                   let dParts=val.split("T")[0].split("-");
+                   return new Date(parseInt(dParts[0]), parseInt(dParts[1]), parseInt(dParts[2]))
+                   .getTime();
+                case QueryValue.IsTime:
+                    val=this.normalizeTime(val, false, true);
+                    let tParts = val.match(/\d+/g);
+                    return new Date(
+                            1970, 0, 1,
+                            parseInt(tParts[0]), parseInt(tParts[1]), parseInt(tParts[2]), parseInt(tParts[3]))
+                            .getTime();
+                case QueryValue.IsDuration:
+                    val=this.normalizeTime(val, true, false);
+                    let parts = val.match(/\d+/g);
+                    return (((parseInt(parts[0])*24 +
+                        parseInt(parts[1]))*60 +
+                        parseInt(parts[2]))*60  +
+                        parseInt(parts[3]))*1000 + 
+                        parts[4] ;
+                default:
+                    return null;
+            }
+        }
         toString() : string|null
         {
             if(this.value===null || typeof this.value == "undefined")
@@ -262,7 +413,10 @@ namespace mvcct_odata {
                 default:
                     return null;
             }
-            
+        }
+        toQuery(): ((o: any) => boolean) | null
+        {
+            return null;
         }
 
     }
@@ -274,16 +428,31 @@ namespace mvcct_odata {
     }
     export class QueryFilterCondition  extends QueryValue implements IQueryFilterCondition
     {
-        static eq= "eq";
-        static ne = "ne";
-        static gt = "gt";
-        static lt = "lt";
-        static ge = "ge";
-        static le = "le";
-        static startswith = "startswith";
-        static endswith = "endswith";
-        static contains = "contains";
-
+        static readonly eq= "eq";
+        static readonly ne = "ne";
+        static readonly gt = "gt";
+        static readonly lt = "lt";
+        static readonly ge = "ge";
+        static readonly le = "le";
+        static readonly startswith = "startswith";
+        static readonly endswith = "endswith";
+        static readonly contains = "contains";
+        private static readonly dict: {[name: string]: (x: any, y:any) => boolean} = 
+            {
+                "eq": (x, y) => x == y,
+                "ne": (x, y) => x != y,
+                "gt": (x, y) => x > y,
+                "lt": (x, y) => x < y,
+                "ge": (x, y) => x >= y,
+                "le": (x, y) => x <= y,
+                "startswith": (x, y) => (x+'').indexOf(y+'') == 0,
+                "endswith": (x, y) => {
+                    let xs=x+'';
+                    let ys=y+'';
+                    return xs.indexOf(ys, xs.length - ys.length) >=0;
+                },
+                "contains": (x, y) => (x+'').indexOf(y+'') >= 0
+            };
         operator: string|null;
         property: string|null;
         inv: boolean;
@@ -301,6 +470,38 @@ namespace mvcct_odata {
                 this.operator=null;
                 this.inv=false;
                 this.property=null;
+            }
+        }
+        toQuery() : ((o: any) => boolean)|null
+        {
+            let val = this.getValue();
+            if (val == null || typeof val !== "string") return null;
+            if(!this.property) return 
+                (o: any) => {
+                    if(typeof o !== "object") return false;
+                    for(let key in o) {
+                        let cval = o[key];
+                        if(typeof cval === "string"){
+                            if(cval.indexOf(val) >=0) return true;
+                        }
+                    }
+                    return false;
+                };
+            if (!this.operator) return null;
+            let op = QueryFilterCondition.dict[this.operator];
+            if(!op) return null;
+            let self=this;
+            let property = this.property;
+            switch(this.operator)
+            {
+                case QueryFilterCondition.startswith:
+                case QueryFilterCondition.endswith:
+                case QueryFilterCondition.contains:
+                    if (this.inv) return (o:any) => op(val, self.getProperty(o, property));
+                    else return (o:any) => op(self.getProperty(o, property), val);
+                default:
+                    return (o:any) => op(self.getProperty(o, property), val);
+
             }
         }
         toString(): string|null
@@ -355,6 +556,11 @@ namespace mvcct_odata {
             if(!this.value) return null;
             else return this.value.toString();
         }
+        toQuery() : ((o: any) => boolean)|null
+        {
+            if(!this.value) return null;
+            else return this.value.toQuery();
+        }
     }
 
     /// sorting
@@ -392,12 +598,34 @@ namespace mvcct_odata {
             if(this.down) return this.encodeProperty(this.property)+" desc";
             else return this.encodeProperty(this.property)+" asc";
         }
+        toCompare(): ((o1: any, o2: any) => number) | null
+        {
+            if(!this.property) return null;
+            let prop = this.property;
+            let self = this;
+            if(this.down)
+                return (x, y) =>{
+                    let val1 = self.getProperty(x, prop);
+                    let val2 = self.getProperty(y, prop);
+                    if(val1 < val2) return -1;
+                    else if(val1 > val2) return 1;
+                    else return 0;
+                }
+            else
+               return (x, y) =>{
+                    let val1 = self.getProperty(x, prop);
+                    let val2 = self.getProperty(y, prop);
+                    if(val1 > val2) return -1;
+                    else if(val1 < val2) return 1;
+                    else return 0;
+                } 
+        }
     }
 
     ///grouping
     export interface IQueryAggregation
     {
-         operator: string;
+        operator: string;
         property: string;
         isCount: boolean;
         alias: string;
@@ -405,12 +633,81 @@ namespace mvcct_odata {
 
     export class QueryAggregation   extends QueryNode implements IQueryAggregation
     {
-        static count = "countdistinct";
-        static sum = "sum";
-        static average = "average";
-        static min = "min";
-        static max = "max";
+        static readonly count = "countdistinct";
+        static readonly sum = "sum";
+        static readonly average = "average";
+        static readonly min = "min";
+        static readonly max = "max";
+        private  getCount(): IAggregation
+        {
+            return {
+                counters: [0],
+                alias: this.alias,
+                property: this.property,
+                initialize: x => {x.set={}; x.counters[0] = 0;},
+                result: x => x.counters[0],
+                update: updateCountDistinct
+            };
+        } 
+        private  getSum(): IAggregation
+        {
+            return {
+                counters: [0],
+                alias: this.alias,
+                property: this.property,
+                initialize: x => {x.counters[0] = 0;},
+                result: x => x.counters[0],
+                update: (x, agg) => {agg.counters[0] = agg.counters[0]+x;}
+            };
+        } 
+        private  getAverage(): IAggregation
+        {
+            return {
+                counters: [0, 0],
+                alias: this.alias,
+                property: this.property,
+                initialize: x => {x.counters[0] = 0; x.counters[1] = 0},
+                result: x => x.counters[0]/x.counters[1],
+                update: (x, agg) => {
+                    agg.counters[0] = agg.counters[0]+x;
+                    agg.counters[1] = agg.counters[1]+1;
+                }
+            };
+        } 
+        private  getMin(): IAggregation
+        {
+            return {
+                counters: [0],
+                alias: this.alias,
+                property: this.property,
+                initialize: x => {x.counters[0] = undefined; },
+                result: x => x.counters[0],
+                update: (x, agg) => {
+                    if(typeof agg.counters[0] === "undefined" || 
+                       x < agg.counters[0]) 
+                       agg.counters[0] = x;
+                       
 
+                }
+            };
+        } 
+        private  getMax(): IAggregation
+        {
+            return {
+                counters: [0],
+                alias: this.alias,
+                property: this.property,
+                initialize: x => {x.counters[0] = undefined; },
+                result: x => x.counters[0],
+                update: (x, agg) => {
+                    if(typeof agg.counters[0] === "undefined" || 
+                       x > agg.counters[0]) 
+                       agg.counters[0] = x;
+                       
+
+                }
+            };
+        } 
         operator: string;
         property: string;
         isCount: boolean;
@@ -442,6 +739,15 @@ namespace mvcct_odata {
             return this.encodeProperty(this.property) + 
                 " with " + this.operator +
                 " as " + this.alias;
+        }
+        toQuery(): IAggregation{
+            switch(this.operator){
+                case QueryAggregation.count : return this.getCount();
+                case QueryAggregation.min : return this.getMin();
+                case QueryAggregation.max : return this.getMax();
+                case QueryAggregation.sum : return this.getSum();
+                case QueryAggregation.average : return this.getAverage(); 
+            }
         }
     }
 
@@ -494,6 +800,21 @@ namespace mvcct_odata {
 
             if (!aggs) return "groupby(("+groups+"))";
             else return "groupby(("+groups+"),aggregate("+aggs+")";
+        }
+        toQuery(): (input: any[]) => any[]
+        {
+            if (!this.keys || !this.keys.length) return null;
+            let keys = this.keys.map(x => x);
+            let aggs = !this.aggregations || !this.aggregations.length ? [] :
+                this.aggregations.map(x => x.toQuery());
+            return (input: any[]) => {
+                if(!input || !input.length) return [];
+                let aggregator = new aggregationDictionary();
+                input.forEach(x => {
+                    aggregator.add(keys, x);
+                })
+                return aggregator.aggregate(keys.length, keys, aggs);
+            }
         }
     }
 
@@ -675,6 +996,44 @@ namespace mvcct_odata {
         toString(): string|null
         {
             return this.addToUrl(this.attachedTo? this.attachedTo.baseUrl : null);
+        }
+        toQuery(): (o: Array<any>) =>  Array<any>
+        {
+             let toCompose: Array<(x: Array<any>) => Array<any>> =[];
+             let search = this.search ? this.search.toQuery(): null;
+             if(search){
+                 toCompose.push(
+                     x=> x.filter(search)
+                 );
+             } 
+             else{
+                 let filter = this.filter ? this.filter.toQuery(): null;
+                 if(filter){
+                     toCompose.push(
+                        x=> x.filter(filter)
+                    );
+                 }
+             }
+             let grouping = this.grouping ? this.grouping.toQuery() : null;
+             if(grouping){
+                 toCompose.push(grouping);
+             }
+             let sorting = this.sorting ? lexicalOrder(this.sorting.map(x => x.toCompare())) : null;
+             if(sorting) toCompose.push(
+                x => x.sort(sorting)
+             );
+             if(this.skip>0 || (this.take && this.take>0))
+             {
+                 let skip= this.skip>0 ? this.skip : 0;
+                 let take = (this.take && this.take>0) ? this.take+skip : undefined;
+                 toCompose.push(
+                     x => x.length ? 
+                        x.slice(Math.min(skip, x.length-1), take ? Math.min(take, x.length-1) : undefined) :
+                        x
+                 );
+             }
+             if(toCompose.length) return composition(toCompose);
+             else return x => x;
         }
     } 
     

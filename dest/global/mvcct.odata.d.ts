@@ -1,9 +1,22 @@
 declare namespace mvcct_odata {
+    interface IAggregation {
+        property: string | null;
+        alias: string;
+        initialize: (x: IAggregation) => void;
+        update: (val: any, x: IAggregation) => void;
+        result: (x: IAggregation) => any;
+        counters: number[];
+        set?: {
+            [x: string]: boolean;
+        };
+    }
     abstract class QueryNode {
         encodeProperty(name: string): string;
         abstract toString(): string | null;
+        getProperty(o: any, p: string): any;
     }
     abstract class QueryFilterClause extends QueryNode {
+        abstract toQuery(): ((o: any) => boolean) | null;
     }
     interface IQueryFilterBooleanOperator {
         operator: number;
@@ -13,12 +26,12 @@ declare namespace mvcct_odata {
         child2: IQueryFilterBooleanOperator;
     }
     class QueryFilterBooleanOperator extends QueryFilterClause implements IQueryFilterBooleanOperator {
-        static and: number;
-        static or: number;
-        static not: number;
-        static AND: number;
-        static OR: number;
-        static NOT: number;
+        static readonly and: number;
+        static readonly or: number;
+        static readonly not: number;
+        static readonly AND: number;
+        static readonly OR: number;
+        static readonly NOT: number;
         operator: number;
         argument1: QueryValue;
         argument2: QueryValue;
@@ -27,6 +40,7 @@ declare namespace mvcct_odata {
         constructor(origin: IQueryFilterBooleanOperator);
         constructor(operator: number, a1: QueryValue | QueryFilterBooleanOperator, a2?: QueryValue | QueryFilterBooleanOperator);
         toString(): string | null;
+        toQuery(): ((o: any) => boolean) | null;
     }
     interface IQueryValue {
         value: any;
@@ -52,7 +66,9 @@ declare namespace mvcct_odata {
         setBoolean(x: boolean | null): void;
         setNumber(x: number | null): void;
         setString(x: string | null): void;
+        getValue(): any;
         toString(): string | null;
+        toQuery(): ((o: any) => boolean) | null;
     }
     interface IQueryFilterCondition extends IQueryValue {
         operator: string | null;
@@ -60,19 +76,21 @@ declare namespace mvcct_odata {
         inv: boolean;
     }
     class QueryFilterCondition extends QueryValue implements IQueryFilterCondition {
-        static eq: string;
-        static ne: string;
-        static gt: string;
-        static lt: string;
-        static ge: string;
-        static le: string;
-        static startswith: string;
-        static endswith: string;
-        static contains: string;
+        static readonly eq: string;
+        static readonly ne: string;
+        static readonly gt: string;
+        static readonly lt: string;
+        static readonly ge: string;
+        static readonly le: string;
+        static readonly startswith: string;
+        static readonly endswith: string;
+        static readonly contains: string;
+        private static readonly dict;
         operator: string | null;
         property: string | null;
         inv: boolean;
         constructor(origin?: IQueryFilterCondition);
+        toQuery(): ((o: any) => boolean) | null;
         toString(): string | null;
     }
     interface IQuerySearch {
@@ -82,6 +100,7 @@ declare namespace mvcct_odata {
         value: QueryFilterBooleanOperator;
         constructor(origin: IQuerySearch | IQueryFilterBooleanOperator);
         toString(): string | null;
+        toQuery(): ((o: any) => boolean) | null;
     }
     interface IQuerySortingCondition {
         property: string;
@@ -93,6 +112,7 @@ declare namespace mvcct_odata {
         constructor(x: IQuerySortingCondition);
         constructor(property: string, down?: boolean);
         toString(): string | null;
+        toCompare(): ((o1: any, o2: any) => number) | null;
     }
     interface IQueryAggregation {
         operator: string;
@@ -101,11 +121,16 @@ declare namespace mvcct_odata {
         alias: string;
     }
     class QueryAggregation extends QueryNode implements IQueryAggregation {
-        static count: string;
-        static sum: string;
-        static average: string;
-        static min: string;
-        static max: string;
+        static readonly count: string;
+        static readonly sum: string;
+        static readonly average: string;
+        static readonly min: string;
+        static readonly max: string;
+        private getCount();
+        private getSum();
+        private getAverage();
+        private getMin();
+        private getMax();
         operator: string;
         property: string;
         isCount: boolean;
@@ -113,6 +138,7 @@ declare namespace mvcct_odata {
         constructor(x: IQueryAggregation);
         constructor(operator: string, property: string, alias: string);
         toString(): string | null;
+        toQuery(): IAggregation;
     }
     interface IQueryGrouping {
         keys: Array<string>;
@@ -125,6 +151,7 @@ declare namespace mvcct_odata {
         private encodeGroups();
         private encodeAggrgates();
         toString(): string | null;
+        toQuery(): (input: any[]) => any[];
     }
     interface IEndpoint extends Endpoint {
     }
@@ -174,6 +201,7 @@ declare namespace mvcct_odata {
         queryString(): string | null;
         addToUrl(url: string | null): string | null;
         toString(): string | null;
+        toQuery(): (o: Array<any>) => Array<any>;
     }
 }
 declare namespace mvcct {

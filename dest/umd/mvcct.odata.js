@@ -25,6 +25,81 @@ var __extends = (this && this.__extends) || (function () {
         var firstOperandNull = "first operand must have a not null value";
         var notImplemented = "notImplemented";
         var guidMatch = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+        function updateCountDistinct(val, agg) {
+            val = val + '';
+            if (!agg.set[val]) {
+                agg.counters[0] = agg.counters[0] + 1;
+                agg.set[val] = true;
+            }
+        }
+        var aggregationDictionary = (function () {
+            function aggregationDictionary() {
+                this.value = [];
+                this.child = {};
+            }
+            aggregationDictionary.prototype.add = function (properties, row) {
+                this.addInternal(properties.map(function (x) { return row[x] + ''; }), 0, row);
+            };
+            aggregationDictionary.prototype.addInternal = function (keys, index, row) {
+                if (index == keys.length - 1)
+                    this.value.push(row);
+                else {
+                    var next = this.child[keys[index]];
+                    if (!next)
+                        this.child[keys[index]] = next = new aggregationDictionary();
+                    next.addInternal(keys, index + 1, row);
+                }
+            };
+            aggregationDictionary.prototype.aggregate = function (depth, properties, aggregations) {
+                var _this = this;
+                if (depth > 0) {
+                    var res = [];
+                    for (var key in this.child) {
+                        Array.prototype.push.apply(res, this.child[key].aggregate(depth - 1, properties, aggregations));
+                    }
+                }
+                else {
+                    if (!this.value.length)
+                        return [];
+                    aggregations.forEach(function (agg) { agg.initialize(agg); });
+                    var res_1 = {};
+                    properties.forEach(function (key) {
+                        res_1[key] = (_this.value)[key];
+                    });
+                    var _loop_1 = function (o) {
+                        aggregations.forEach(function (agg) { agg.update(o[agg.property], agg); });
+                    };
+                    for (var _i = 0, _a = this.value; _i < _a.length; _i++) {
+                        var o = _a[_i];
+                        _loop_1(o);
+                    }
+                    aggregations.forEach(function (agg) { res_1[agg.alias] = agg.result(agg); });
+                    return [res_1];
+                }
+            };
+            return aggregationDictionary;
+        }());
+        function composition(funcs) {
+            return function (x) {
+                for (var _i = 0, funcs_1 = funcs; _i < funcs_1.length; _i++) {
+                    var f = funcs_1[_i];
+                    x = f(x);
+                }
+                return x;
+            };
+        }
+        function lexicalOrder(funcs) {
+            return function (o1, o2) {
+                var res = 0;
+                for (var _i = 0, funcs_2 = funcs; _i < funcs_2.length; _i++) {
+                    var f = funcs_2[_i];
+                    var x = f(o1, o2);
+                    if (x != 0)
+                        return x;
+                }
+                return res;
+            };
+        }
         var QueryNode = (function () {
             function QueryNode() {
             }
@@ -32,6 +107,15 @@ var __extends = (this && this.__extends) || (function () {
                 if (name == null)
                     return null;
                 return name.replace(/\./g, '/');
+            };
+            QueryNode.prototype.getProperty = function (o, p) {
+                var path = p.split('.');
+                var i = 0;
+                while (typeof o === "object" && i < path.length)
+                    o = o[path[i++]];
+                if (o && typeof o.getMonth === 'function')
+                    o = o.getTime();
+                return o;
             };
             return QueryNode;
         }());
@@ -102,7 +186,7 @@ var __extends = (this && this.__extends) || (function () {
                 if (this.operator == QueryFilterBooleanOperator.not)
                     return "(not " + (arg1 || arg2).toString() + ")";
                 else if (this.operator == QueryFilterBooleanOperator.NOT)
-                    return "(not " + (arg1 || arg2).toString() + ")";
+                    return "(NOT " + (arg1 || arg2).toString() + ")";
                 else if (!arg1)
                     return arg2.toString();
                 else if (!arg2)
@@ -113,7 +197,7 @@ var __extends = (this && this.__extends) || (function () {
                     return sarg2 || null;
                 if (!sarg2)
                     return sarg1 || null;
-                else if (this.operator == QueryFilterBooleanOperator.and)
+                if (this.operator == QueryFilterBooleanOperator.and)
                     return "(" + sarg1 + " and " + sarg2 + ")";
                 else if (this.operator == QueryFilterBooleanOperator.AND)
                     return "(" + sarg1 + " AND " + sarg2 + ")";
@@ -121,6 +205,30 @@ var __extends = (this && this.__extends) || (function () {
                     return "(" + sarg1 + " OR " + sarg2 + ")";
                 else
                     return "(" + sarg1 + " or " + sarg2 + ")";
+            };
+            QueryFilterBooleanOperator.prototype.toQuery = function () {
+                var arg1 = this.argument1 || this.child1;
+                var arg2 = this.argument2 || this.child2;
+                if (!arg1 && !arg2)
+                    return null;
+                if (this.operator == QueryFilterBooleanOperator.not ||
+                    this.operator == QueryFilterBooleanOperator.NOT)
+                    return function (o) { return !(arg1 || arg2).toQuery()(o); };
+                else if (!arg1)
+                    return arg2.toQuery();
+                else if (!arg2)
+                    return arg1.toQuery();
+                var qarg1 = arg1.toQuery();
+                var qarg2 = arg2.toQuery();
+                if (!qarg1)
+                    return qarg2 || null;
+                if (!qarg2)
+                    return qarg1 || null;
+                else if (this.operator == QueryFilterBooleanOperator.and ||
+                    this.operator == QueryFilterBooleanOperator.AND)
+                    return function (o) { return arg1.toQuery()(o) && arg2.toQuery()(o); };
+                else
+                    return function (o) { return arg1.toQuery()(o) || arg2.toQuery()(o); };
             };
             return QueryFilterBooleanOperator;
         }(QueryFilterClause));
@@ -227,6 +335,42 @@ var __extends = (this && this.__extends) || (function () {
                 this.dateTimeType = QueryValue.IsNotDateTime;
                 this.value = x;
             };
+            QueryValue.prototype.getValue = function () {
+                if (this.value === null || typeof this.value == "undefined")
+                    return null;
+                else if (this.dateTimeType == QueryValue.IsNotDateTime)
+                    return this.value;
+                var val = this.value;
+                switch (this.dateTimeType) {
+                    case QueryValue.IsDateTime:
+                        var dtParts = val.match(/\d+/g);
+                        if (val.charAt(val.length - 1).toUpperCase() == "Z")
+                            return new Date(Date.UTC(parseInt(dtParts[0]), parseInt(dtParts[1]), parseInt(dtParts[2]), parseInt(dtParts[3]), parseInt(dtParts[4]), parseInt(dtParts[5]), parseInt(dtParts[5])))
+                                .getTime();
+                        else
+                            return new Date(parseInt(dtParts[0]), parseInt(dtParts[1]), parseInt(dtParts[2]), parseInt(dtParts[3]), parseInt(dtParts[4]), parseInt(dtParts[5]), parseInt(dtParts[5]))
+                                .getTime();
+                    case QueryValue.IsDate:
+                        var dParts = val.split("T")[0].split("-");
+                        return new Date(parseInt(dParts[0]), parseInt(dParts[1]), parseInt(dParts[2]))
+                            .getTime();
+                    case QueryValue.IsTime:
+                        val = this.normalizeTime(val, false, true);
+                        var tParts = val.match(/\d+/g);
+                        return new Date(1970, 0, 1, parseInt(tParts[0]), parseInt(tParts[1]), parseInt(tParts[2]), parseInt(tParts[3]))
+                            .getTime();
+                    case QueryValue.IsDuration:
+                        val = this.normalizeTime(val, true, false);
+                        var parts = val.match(/\d+/g);
+                        return (((parseInt(parts[0]) * 24 +
+                            parseInt(parts[1])) * 60 +
+                            parseInt(parts[2])) * 60 +
+                            parseInt(parts[3])) * 1000 +
+                            parts[4];
+                    default:
+                        return null;
+                }
+            };
             QueryValue.prototype.toString = function () {
                 if (this.value === null || typeof this.value == "undefined")
                     return null;
@@ -256,6 +400,9 @@ var __extends = (this && this.__extends) || (function () {
                         return null;
                 }
             };
+            QueryValue.prototype.toQuery = function () {
+                return null;
+            };
             return QueryValue;
         }(QueryFilterClause));
         QueryValue.IsNotDateTime = 0;
@@ -281,6 +428,43 @@ var __extends = (this && this.__extends) || (function () {
                 }
                 return _this;
             }
+            QueryFilterCondition.prototype.toQuery = function () {
+                var val = this.getValue();
+                if (val == null || typeof val !== "string")
+                    return null;
+                if (!this.property)
+                    return;
+                (function (o) {
+                    if (typeof o !== "object")
+                        return false;
+                    for (var key in o) {
+                        var cval = o[key];
+                        if (typeof cval === "string") {
+                            if (cval.indexOf(val) >= 0)
+                                return true;
+                        }
+                    }
+                    return false;
+                });
+                if (!this.operator)
+                    return null;
+                var op = QueryFilterCondition.dict[this.operator];
+                if (!op)
+                    return null;
+                var self = this;
+                var property = this.property;
+                switch (this.operator) {
+                    case QueryFilterCondition.startswith:
+                    case QueryFilterCondition.endswith:
+                    case QueryFilterCondition.contains:
+                        if (this.inv)
+                            return function (o) { return op(val, self.getProperty(o, property)); };
+                        else
+                            return function (o) { return op(self.getProperty(o, property), val); };
+                    default:
+                        return function (o) { return op(self.getProperty(o, property), val); };
+                }
+            };
             QueryFilterCondition.prototype.toString = function () {
                 var val = _super.prototype.toString.call(this);
                 if (val === null)
@@ -314,6 +498,21 @@ var __extends = (this && this.__extends) || (function () {
         QueryFilterCondition.startswith = "startswith";
         QueryFilterCondition.endswith = "endswith";
         QueryFilterCondition.contains = "contains";
+        QueryFilterCondition.dict = {
+            "eq": function (x, y) { return x == y; },
+            "ne": function (x, y) { return x != y; },
+            "gt": function (x, y) { return x > y; },
+            "lt": function (x, y) { return x < y; },
+            "ge": function (x, y) { return x >= y; },
+            "le": function (x, y) { return x <= y; },
+            "startswith": function (x, y) { return (x + '').indexOf(y + '') == 0; },
+            "endswith": function (x, y) {
+                var xs = x + '';
+                var ys = y + '';
+                return xs.indexOf(ys, xs.length - ys.length) >= 0;
+            },
+            "contains": function (x, y) { return (x + '').indexOf(y + '') >= 0; }
+        };
         mvcct_odata.QueryFilterCondition = QueryFilterCondition;
         var QuerySearch = (function (_super) {
             __extends(QuerySearch, _super);
@@ -335,6 +534,12 @@ var __extends = (this && this.__extends) || (function () {
                     return null;
                 else
                     return this.value.toString();
+            };
+            QuerySearch.prototype.toQuery = function () {
+                if (!this.value)
+                    return null;
+                else
+                    return this.value.toQuery();
             };
             return QuerySearch;
         }(QueryNode));
@@ -364,6 +569,34 @@ var __extends = (this && this.__extends) || (function () {
                 else
                     return this.encodeProperty(this.property) + " asc";
             };
+            QuerySortingCondition.prototype.toCompare = function () {
+                if (!this.property)
+                    return null;
+                var prop = this.property;
+                var self = this;
+                if (this.down)
+                    return function (x, y) {
+                        var val1 = self.getProperty(x, prop);
+                        var val2 = self.getProperty(y, prop);
+                        if (val1 < val2)
+                            return -1;
+                        else if (val1 > val2)
+                            return 1;
+                        else
+                            return 0;
+                    };
+                else
+                    return function (x, y) {
+                        var val1 = self.getProperty(x, prop);
+                        var val2 = self.getProperty(y, prop);
+                        if (val1 > val2)
+                            return -1;
+                        else if (val1 < val2)
+                            return 1;
+                        else
+                            return 0;
+                    };
+            };
             return QuerySortingCondition;
         }(QueryNode));
         mvcct_odata.QuerySortingCondition = QuerySortingCondition;
@@ -390,12 +623,82 @@ var __extends = (this && this.__extends) || (function () {
                 }
                 return _this;
             }
+            QueryAggregation.prototype.getCount = function () {
+                return {
+                    counters: [0],
+                    alias: this.alias,
+                    property: this.property,
+                    initialize: function (x) { x.set = {}; x.counters[0] = 0; },
+                    result: function (x) { return x.counters[0]; },
+                    update: updateCountDistinct
+                };
+            };
+            QueryAggregation.prototype.getSum = function () {
+                return {
+                    counters: [0],
+                    alias: this.alias,
+                    property: this.property,
+                    initialize: function (x) { x.counters[0] = 0; },
+                    result: function (x) { return x.counters[0]; },
+                    update: function (x, agg) { agg.counters[0] = agg.counters[0] + x; }
+                };
+            };
+            QueryAggregation.prototype.getAverage = function () {
+                return {
+                    counters: [0, 0],
+                    alias: this.alias,
+                    property: this.property,
+                    initialize: function (x) { x.counters[0] = 0; x.counters[1] = 0; },
+                    result: function (x) { return x.counters[0] / x.counters[1]; },
+                    update: function (x, agg) {
+                        agg.counters[0] = agg.counters[0] + x;
+                        agg.counters[1] = agg.counters[1] + 1;
+                    }
+                };
+            };
+            QueryAggregation.prototype.getMin = function () {
+                return {
+                    counters: [0],
+                    alias: this.alias,
+                    property: this.property,
+                    initialize: function (x) { x.counters[0] = undefined; },
+                    result: function (x) { return x.counters[0]; },
+                    update: function (x, agg) {
+                        if (typeof agg.counters[0] === "undefined" ||
+                            x < agg.counters[0])
+                            agg.counters[0] = x;
+                    }
+                };
+            };
+            QueryAggregation.prototype.getMax = function () {
+                return {
+                    counters: [0],
+                    alias: this.alias,
+                    property: this.property,
+                    initialize: function (x) { x.counters[0] = undefined; },
+                    result: function (x) { return x.counters[0]; },
+                    update: function (x, agg) {
+                        if (typeof agg.counters[0] === "undefined" ||
+                            x > agg.counters[0])
+                            agg.counters[0] = x;
+                    }
+                };
+            };
             QueryAggregation.prototype.toString = function () {
                 if (!this.property || !this.operator || !this.alias)
                     return null;
                 return this.encodeProperty(this.property) +
                     " with " + this.operator +
                     " as " + this.alias;
+            };
+            QueryAggregation.prototype.toQuery = function () {
+                switch (this.operator) {
+                    case QueryAggregation.count: return this.getCount();
+                    case QueryAggregation.min: return this.getMin();
+                    case QueryAggregation.max: return this.getMax();
+                    case QueryAggregation.sum: return this.getSum();
+                    case QueryAggregation.average: return this.getAverage();
+                }
             };
             return QueryAggregation;
         }(QueryNode));
@@ -451,6 +754,22 @@ var __extends = (this && this.__extends) || (function () {
                     return "groupby((" + groups + "))";
                 else
                     return "groupby((" + groups + "),aggregate(" + aggs + ")";
+            };
+            QueryGrouping.prototype.toQuery = function () {
+                if (!this.keys || !this.keys.length)
+                    return null;
+                var keys = this.keys.map(function (x) { return x; });
+                var aggs = !this.aggregations || !this.aggregations.length ? [] :
+                    this.aggregations.map(function (x) { return x.toQuery(); });
+                return function (input) {
+                    if (!input || !input.length)
+                        return [];
+                    var aggregator = new aggregationDictionary();
+                    input.forEach(function (x) {
+                        aggregator.add(keys, x);
+                    });
+                    return aggregator.aggregate(keys.length, keys, aggs);
+                };
             };
             return QueryGrouping;
         }(QueryNode));
@@ -583,6 +902,37 @@ var __extends = (this && this.__extends) || (function () {
             };
             QueryDescription.prototype.toString = function () {
                 return this.addToUrl(this.attachedTo ? this.attachedTo.baseUrl : null);
+            };
+            QueryDescription.prototype.toQuery = function () {
+                var toCompose = [];
+                var search = this.search ? this.search.toQuery() : null;
+                if (search) {
+                    toCompose.push(function (x) { return x.filter(search); });
+                }
+                else {
+                    var filter_1 = this.filter ? this.filter.toQuery() : null;
+                    if (filter_1) {
+                        toCompose.push(function (x) { return x.filter(filter_1); });
+                    }
+                }
+                var grouping = this.grouping ? this.grouping.toQuery() : null;
+                if (grouping) {
+                    toCompose.push(grouping);
+                }
+                var sorting = this.sorting ? lexicalOrder(this.sorting.map(function (x) { return x.toCompare(); })) : null;
+                if (sorting)
+                    toCompose.push(function (x) { return x.sort(sorting); });
+                if (this.skip > 0 || (this.take && this.take > 0)) {
+                    var skip_1 = this.skip > 0 ? this.skip : 0;
+                    var take_1 = (this.take && this.take > 0) ? this.take + skip_1 : undefined;
+                    toCompose.push(function (x) { return x.length ?
+                        x.slice(Math.min(skip_1, x.length - 1), take_1 ? Math.min(take_1, x.length - 1) : undefined) :
+                        x; });
+                }
+                if (toCompose.length)
+                    return composition(toCompose);
+                else
+                    return function (x) { return x; };
             };
             return QueryDescription;
         }());
