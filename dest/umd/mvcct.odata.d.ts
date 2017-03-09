@@ -19,11 +19,11 @@ declare namespace mvcct_odata {
         abstract toQuery(): ((o: any) => boolean) | null;
     }
     interface IQueryFilterBooleanOperator {
-        operator: number;
-        argument1: IQueryValue;
-        argument2: IQueryValue;
-        child1: IQueryFilterBooleanOperator;
-        child2: IQueryFilterBooleanOperator;
+        operator?: number;
+        argument1?: IQueryValue;
+        argument2?: IQueryValue;
+        child1?: IQueryFilterBooleanOperator;
+        child2?: IQueryFilterBooleanOperator;
     }
     class QueryFilterBooleanOperator extends QueryFilterClause implements IQueryFilterBooleanOperator {
         static readonly and: number;
@@ -61,7 +61,7 @@ declare namespace mvcct_odata {
         setDate(x: Date | null): void;
         setTime(x: Date | null): void;
         setDuration(days: number, hours: number, minutes?: number, seconds?: number, milliseconds?: number): void;
-        setDateTimeLocal(x: Date | null): string;
+        setDateTimeLocal(x: Date | null): void;
         setDateTimeInvariant(x: Date | null): void;
         setBoolean(x: boolean | null): void;
         setNumber(x: number | null): void;
@@ -98,7 +98,7 @@ declare namespace mvcct_odata {
     }
     class QuerySearch extends QueryNode implements IQuerySearch {
         value: QueryFilterBooleanOperator;
-        constructor(origin: IQuerySearch | IQueryFilterBooleanOperator);
+        constructor(origin: IQuerySearch | IQueryFilterBooleanOperator | IQueryFilterCondition);
         toString(): string | null;
         toQuery(): ((o: any) => boolean) | null;
     }

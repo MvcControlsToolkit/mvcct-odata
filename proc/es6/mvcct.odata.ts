@@ -118,11 +118,11 @@ namespace mvcct_odata {
     }  
     export interface IQueryFilterBooleanOperator
     {
-        operator: number;
-        argument1: IQueryValue;
-        argument2: IQueryValue;
-        child1: IQueryFilterBooleanOperator;
-        child2: IQueryFilterBooleanOperator;
+        operator?: number;
+        argument1?: IQueryValue;
+        argument2?: IQueryValue;
+        child1?: IQueryFilterBooleanOperator;
+        child2?: IQueryFilterBooleanOperator;
     }
     export class QueryFilterBooleanOperator extends QueryFilterClause implements IQueryFilterBooleanOperator
     {
@@ -154,6 +154,7 @@ namespace mvcct_odata {
                 if(typeof y == "number")
                 {
                     if(!a1) throw firstOperandNull;
+                    this.operator=y;
                     if (typeof (<QueryFilterCondition>a1).dateTimeType == "undefined")
                     {
                         this.child1=(<QueryFilterBooleanOperator>a1);
@@ -182,18 +183,18 @@ namespace mvcct_odata {
                 else{
                     if(!y) throw firstArgumentNull;
                     this.argument1= y.argument1 ? 
-                        (typeof (<QueryFilterCondition>y.argument1).inv != "undefined" ?
+                        (typeof (<QueryFilterCondition>y.argument1).operator != "undefined" ?
                              new QueryFilterCondition(<QueryFilterCondition>y.argument1) 
                              : new QueryValue(y.argument1))
                         : null;
                     this.argument2= y.argument2 ? 
-                        (typeof (<QueryFilterCondition>y.argument2).inv != "undefined" ?
+                        (typeof (<QueryFilterCondition>y.argument2).operator != "undefined" ?
                              new QueryFilterCondition(<QueryFilterCondition>y.argument2) 
                              : new QueryValue(y.argument2)) 
                         : null;
                     this.child1=y.child1 ? new QueryFilterBooleanOperator(y.child1) : null;
                     this.child2=y.child2 ? new QueryFilterBooleanOperator(y.child2) : null;;
-                    this.operator=y.operator;
+                    this.operator=y.operator || QueryFilterBooleanOperator.and;
                 }
             }
             toString() : string|null
@@ -263,7 +264,7 @@ namespace mvcct_odata {
             if(origin)
             {
                 this.value = origin.value;
-                this.dateTimeType=origin.dateTimeType
+                this.dateTimeType=origin.dateTimeType||QueryValue.IsNotDateTime;
             }
             else 
             {
@@ -280,16 +281,20 @@ namespace mvcct_odata {
         private normalizeTime(x: string, days: boolean, maxTree:boolean): string
         {
             var parts=x.split(":");
-            if(days && parts[0].indexOf(".")<0) x="00."+x;
+            var dayPos=parts[0].indexOf(".");
+            if(days && dayPos<0) x="00."+x;
+            else if (days && dayPos == 0) x="00"+x;
+            else if (days && dayPos == 1) x="0"+x;
             if(parts.length==1) x=x+":00:00.000";
             else if (parts.length ==2) x=x+":00.000";
             else if(parts[2].indexOf(".")<0) x=x+".000";
             else if(maxTree && parts[2].length>6) x=x.substr(0, x.length-parts[2].length+6);
+            else if (parts[2].length<6) x=x+new Array(7-parts[2].length).join("0")
             return x; 
         }
         isGuid(): boolean
         {
-            return typeof this.value == "string" && guidMatch.test(<string>this.value);
+            return typeof this.value == "string" && guidMatch.test((<string>this.value).toLowerCase());
         }
         setDate(x: Date|null) {
             this.dateTimeType = QueryValue.IsDate;
@@ -312,12 +317,13 @@ namespace mvcct_odata {
             this.value=this.formatInt(days || 0, 2) +
                 "."+this.formatInt(hours || 0, 2) +
                 ":"+this.formatInt(minutes || 0, 2) +
+                ":"+this.formatInt(seconds || 0, 2) +
                 "."+this.formatInt(milliseconds || 0, 3);
         }
         setDateTimeLocal(x: Date|null) {
             this.dateTimeType = QueryValue.IsDateTime;
             if(!x) this.value=null;
-            return x.toISOString();
+            this.value= x.toISOString();
         }
         setDateTimeInvariant(x: Date|null) {
             this.dateTimeType = QueryValue.IsDateTime;
@@ -405,7 +411,7 @@ namespace mvcct_odata {
                 case QueryValue.IsDuration:
                     val=this.normalizeTime(val, true, false);
                     let parts = val.match(/\d+/g);
-                    return "'P"+parts[0] + "D"+
+                    return "'P"+parts[0] + "DT"+
                         parts[1] + "H" +
                         parts[2] + "M" +
                         parts[3] + "." +
@@ -510,7 +516,7 @@ namespace mvcct_odata {
             if (val === null) return null;
             if(!this.property) return val;
             if(this.dateTimeType == QueryValue.IsNotDateTime &&
-                typeof val == "string" &&
+                typeof this.value == "string" &&
                 !this.isGuid()
             ) val = "'"+val+"'";
             
@@ -538,14 +544,15 @@ namespace mvcct_odata {
     export class QuerySearch  extends QueryNode implements IQuerySearch
     {
         value: QueryFilterBooleanOperator;
-        constructor(origin: IQuerySearch|IQueryFilterBooleanOperator)
+        constructor(origin: IQuerySearch|IQueryFilterBooleanOperator|IQueryFilterCondition)
         {
             super();
             if (!origin) throw firstArgumentNull;
-            if(typeof (<IQueryFilterBooleanOperator>origin).operator != "undefined")
-            {
-                this.value = new QueryFilterBooleanOperator(<IQueryFilterBooleanOperator>origin);
-            }
+            if(typeof (<IQueryFilterCondition>origin).operator != "undefined")
+                    this.value = new QueryFilterBooleanOperator(<IQueryFilterBooleanOperator>origin);
+            else if(typeof (<IQueryFilterCondition>origin).dateTimeType != "undefined")
+                    this.value = new QueryFilterBooleanOperator(QueryFilterBooleanOperator.AND, 
+                        new QueryFilterCondition(<IQueryFilterCondition>origin));      
             else
                this.value = (<IQuerySearch>origin).value ?   
                     new QueryFilterBooleanOperator((<IQuerySearch>origin).value) 
@@ -721,13 +728,14 @@ namespace mvcct_odata {
             if(typeof y == "string")
             {
                if(!y || !property || !alias) throw anArgumentNull; 
+               this.operator = y;
                this.isCount=y == QueryAggregation.count;
                this.property=property;
                this.alias=alias;
             }
             else{
                 if(!y) throw firstArgumentNull; 
-                this.isCount=y.isCount;
+                this.isCount=y.operator == QueryAggregation.count;
                 this.operator=y.operator;
                 this.alias=y.alias;
                 this.property=y.property;
@@ -787,7 +795,7 @@ namespace mvcct_odata {
         private encodeAggrgates(): string|null
         {
             if (!this.aggregations|| !this.aggregations.length) return null;
-            if (this.aggregations.length) return this.aggregations[0].toString();
+            if (this.aggregations.length == 1) return this.aggregations[0].toString();
             return this.aggregations.map(x => x.toString()).filter(x => x).join(',');
 
         }
@@ -799,7 +807,7 @@ namespace mvcct_odata {
             var aggs = this.encodeAggrgates();
 
             if (!aggs) return "groupby(("+groups+"))";
-            else return "groupby(("+groups+"),aggregate("+aggs+")";
+            else return "groupby(("+groups+"),aggregate("+aggs+"))";
         }
         toQuery(): (input: any[]) => any[]
         {

@@ -127,6 +127,7 @@ var mvcct_odata;
             if (typeof y == "number") {
                 if (!a1)
                     throw firstOperandNull;
+                _this.operator = y;
                 if (typeof a1.dateTimeType == "undefined") {
                     _this.child1 = a1;
                     _this.argument1 = null;
@@ -152,19 +153,19 @@ var mvcct_odata;
                 if (!y)
                     throw firstArgumentNull;
                 _this.argument1 = y.argument1 ?
-                    (typeof y.argument1.inv != "undefined" ?
+                    (typeof y.argument1.operator != "undefined" ?
                         new QueryFilterCondition(y.argument1)
                         : new QueryValue(y.argument1))
                     : null;
                 _this.argument2 = y.argument2 ?
-                    (typeof y.argument2.inv != "undefined" ?
+                    (typeof y.argument2.operator != "undefined" ?
                         new QueryFilterCondition(y.argument2)
                         : new QueryValue(y.argument2))
                     : null;
                 _this.child1 = y.child1 ? new QueryFilterBooleanOperator(y.child1) : null;
                 _this.child2 = y.child2 ? new QueryFilterBooleanOperator(y.child2) : null;
                 ;
-                _this.operator = y.operator;
+                _this.operator = y.operator || QueryFilterBooleanOperator.and;
             }
             return _this;
         }
@@ -236,7 +237,7 @@ var mvcct_odata;
             var _this = _super.call(this) || this;
             if (origin) {
                 _this.value = origin.value;
-                _this.dateTimeType = origin.dateTimeType;
+                _this.dateTimeType = origin.dateTimeType || QueryValue.IsNotDateTime;
             }
             else {
                 _this.value = null;
@@ -253,8 +254,13 @@ var mvcct_odata;
         };
         QueryValue.prototype.normalizeTime = function (x, days, maxTree) {
             var parts = x.split(":");
-            if (days && parts[0].indexOf(".") < 0)
+            var dayPos = parts[0].indexOf(".");
+            if (days && dayPos < 0)
                 x = "00." + x;
+            else if (days && dayPos == 0)
+                x = "00" + x;
+            else if (days && dayPos == 1)
+                x = "0" + x;
             if (parts.length == 1)
                 x = x + ":00:00.000";
             else if (parts.length == 2)
@@ -263,10 +269,12 @@ var mvcct_odata;
                 x = x + ".000";
             else if (maxTree && parts[2].length > 6)
                 x = x.substr(0, x.length - parts[2].length + 6);
+            else if (parts[2].length < 6)
+                x = x + new Array(7 - parts[2].length).join("0");
             return x;
         };
         QueryValue.prototype.isGuid = function () {
-            return typeof this.value == "string" && guidMatch.test(this.value);
+            return typeof this.value == "string" && guidMatch.test(this.value.toLowerCase());
         };
         QueryValue.prototype.setDate = function (x) {
             this.dateTimeType = QueryValue.IsDate;
@@ -293,13 +301,14 @@ var mvcct_odata;
             this.value = this.formatInt(days || 0, 2) +
                 "." + this.formatInt(hours || 0, 2) +
                 ":" + this.formatInt(minutes || 0, 2) +
+                ":" + this.formatInt(seconds || 0, 2) +
                 "." + this.formatInt(milliseconds || 0, 3);
         };
         QueryValue.prototype.setDateTimeLocal = function (x) {
             this.dateTimeType = QueryValue.IsDateTime;
             if (!x)
                 this.value = null;
-            return x.toISOString();
+            this.value = x.toISOString();
         };
         QueryValue.prototype.setDateTimeInvariant = function (x) {
             this.dateTimeType = QueryValue.IsDateTime;
@@ -381,7 +390,7 @@ var mvcct_odata;
                 case QueryValue.IsDuration:
                     val = this.normalizeTime(val, true, false);
                     var parts = val.match(/\d+/g);
-                    return "'P" + parts[0] + "D" +
+                    return "'P" + parts[0] + "DT" +
                         parts[1] + "H" +
                         parts[2] + "M" +
                         parts[3] + "." +
@@ -462,7 +471,7 @@ var mvcct_odata;
             if (!this.property)
                 return val;
             if (this.dateTimeType == QueryValue.IsNotDateTime &&
-                typeof val == "string" &&
+                typeof this.value == "string" &&
                 !this.isGuid())
                 val = "'" + val + "'";
             switch (this.operator) {
@@ -510,9 +519,10 @@ var mvcct_odata;
             var _this = _super.call(this) || this;
             if (!origin)
                 throw firstArgumentNull;
-            if (typeof origin.operator != "undefined") {
+            if (typeof origin.operator != "undefined")
                 _this.value = new QueryFilterBooleanOperator(origin);
-            }
+            else if (typeof origin.dateTimeType != "undefined")
+                _this.value = new QueryFilterBooleanOperator(QueryFilterBooleanOperator.AND, new QueryFilterCondition(origin));
             else
                 _this.value = origin.value ?
                     new QueryFilterBooleanOperator(origin.value)
@@ -599,6 +609,7 @@ var mvcct_odata;
             if (typeof y == "string") {
                 if (!y || !property || !alias)
                     throw anArgumentNull;
+                _this.operator = y;
                 _this.isCount = y == QueryAggregation.count;
                 _this.property = property;
                 _this.alias = alias;
@@ -606,7 +617,7 @@ var mvcct_odata;
             else {
                 if (!y)
                     throw firstArgumentNull;
-                _this.isCount = y.isCount;
+                _this.isCount = y.operator == QueryAggregation.count;
                 _this.operator = y.operator;
                 _this.alias = y.alias;
                 _this.property = y.property;
@@ -731,7 +742,7 @@ var mvcct_odata;
         QueryGrouping.prototype.encodeAggrgates = function () {
             if (!this.aggregations || !this.aggregations.length)
                 return null;
-            if (this.aggregations.length)
+            if (this.aggregations.length == 1)
                 return this.aggregations[0].toString();
             return this.aggregations.map(function (x) { return x.toString(); }).filter(function (x) { return x; }).join(',');
         };
@@ -743,7 +754,7 @@ var mvcct_odata;
             if (!aggs)
                 return "groupby((" + groups + "))";
             else
-                return "groupby((" + groups + "),aggregate(" + aggs + ")";
+                return "groupby((" + groups + "),aggregate(" + aggs + "))";
         };
         QueryGrouping.prototype.toQuery = function () {
             if (!this.keys || !this.keys.length)
