@@ -942,9 +942,9 @@ var __extends = (this && this.__extends) || (function () {
                 if (this.skip > 0 || (this.take && this.take > 0)) {
                     var skip_1 = this.skip > 0 ? this.skip : 0;
                     var take_1 = (this.take && this.take > 0) ? this.take + skip_1 : undefined;
-                    toCompose.push(function (x) { return x.length ?
-                        x.slice(Math.min(skip_1, x.length - 1), take_1 ? Math.min(take_1, x.length - 1) : undefined) :
-                        x; });
+                    toCompose.push(function (x) { return x.length && skip_1 < x.length ?
+                        x.slice(skip_1, take_1 ? Math.min(take_1, x.length) : undefined) :
+                        []; });
                 }
                 if (toCompose.length)
                     return composition(toCompose);

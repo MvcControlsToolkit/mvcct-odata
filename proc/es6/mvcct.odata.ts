@@ -1043,9 +1043,9 @@ namespace mvcct_odata {
                  let skip= this.skip>0 ? this.skip : 0;
                  let take = (this.take && this.take>0) ? this.take+skip : undefined;
                  toCompose.push(
-                     x => x.length ? 
-                        x.slice(Math.min(skip, x.length-1), take ? Math.min(take, x.length-1) : undefined) :
-                        x
+                     x => x.length && skip<x.length? 
+                        x.slice(skip, take ? Math.min(take, x.length) : undefined) :
+                        []
                  );
              }
              if(toCompose.length) return composition(toCompose);

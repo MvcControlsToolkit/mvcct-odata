@@ -1,6 +1,6 @@
 var odata = require("./dest/umd/mvcct.odata.js");
 
-var data = [
+ var data = [
             {
                 AString: "francesco",
                 AnInt: 5,
@@ -15,7 +15,7 @@ var data = [
             },
             {
                 AString: "francesco",
-                SecondInt: 5,
+                AnInt: 5,
                 toAggregate: "home",
                 mAggregate: 4
             },
@@ -33,14 +33,6 @@ var data = [
             }
         ];
         var query = new odata.QueryDescription();
-        query.sorting = [
-                new odata.QuerySortingCondition("AString")
-            ];
-        var grouping = {
-                keys: ["AString"],
-                aggregations: null
-            };
-      query.grouping=new odata.QueryGrouping(grouping);
-      var func = query.toQuery();
-      var res = func(data);
+         query.skip = 2;
+         var res=query.toQuery()(data);
              

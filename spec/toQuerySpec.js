@@ -747,3 +747,65 @@ describe("group by", function(){
             expect(res[2].ACount).toBe(1);
         });
 });
+describe("paging", function(){
+    var data = [
+            {
+                AString: "francesco",
+                AnInt: 5,
+                toAggregate: "home",
+                mAggregate: 2
+            },
+            {
+                AString: "francesco",
+                AnInt: 3,
+                toAggregate: "home",
+                mAggregate: 3
+            },
+            {
+                AString: "francesco",
+                AnInt: 5,
+                toAggregate: "home",
+                mAggregate: 4
+            },
+            {
+                AString: "francesco",
+                AnInt: 3,
+                toAggregate: "office",
+                mAggregate: 7
+            },
+            {
+                AString: "peter",
+                AnInt: 4,
+                toAggregate: "office",
+                mAggregate: 2
+            }
+        ];
+        var query = new odata.QueryDescription();
+        it("top only", function(){
+            query.take = 2;
+            var res=query.toQuery()(data);
+            expect(res.length).toBe(2);
+            expect(res[1].mAggregate).toBe(3);
+        });
+        it("skip only", function(){
+            query.take=null;
+            query.skip = 2;
+            var res=query.toQuery()(data);
+            expect(res.length).toBe(3);
+            expect(res[0].mAggregate).toBe(4);
+        });
+        it("skip and take", function(){
+            query.take=2;
+            query.skip = 2;
+            var res=query.toQuery()(data);
+            expect(res.length).toBe(2);
+            expect(res[1].mAggregate).toBe(7);
+        });
+        it("skip and (take over the bounds)", function(){
+            query.take=5;
+            query.skip = 2;
+            var res=query.toQuery()(data);
+            expect(res.length).toBe(3);
+            expect(res[2].mAggregate).toBe(2);
+        });
+});
