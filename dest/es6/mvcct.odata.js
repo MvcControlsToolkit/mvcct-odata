@@ -31,7 +31,7 @@ var mvcct_odata;
             this.addInternal(properties.map(function (x) { return row[x] + ''; }), 0, row);
         };
         aggregationDictionary.prototype.addInternal = function (keys, index, row) {
-            if (index == keys.length - 1)
+            if (index == keys.length)
                 this.value.push(row);
             else {
                 var next = this.child[keys[index]];
@@ -47,6 +47,7 @@ var mvcct_odata;
                 for (var key in this.child) {
                     Array.prototype.push.apply(res, this.child[key].aggregate(depth - 1, properties, aggregations));
                 }
+                return res;
             }
             else {
                 if (!this.value.length)
@@ -54,7 +55,7 @@ var mvcct_odata;
                 aggregations.forEach(function (agg) { agg.initialize(agg); });
                 var res_1 = {};
                 properties.forEach(function (key) {
-                    res_1[key] = (_this.value)[key];
+                    res_1[key] = (_this.value[0])[key];
                 });
                 var _loop_1 = function (o) {
                     aggregations.forEach(function (agg) { agg.update(o[agg.property], agg); });
@@ -344,14 +345,14 @@ var mvcct_odata;
                 case QueryValue.IsDateTime:
                     var dtParts = val.match(/\d+/g);
                     if (val.charAt(val.length - 1).toUpperCase() == "Z")
-                        return new Date(Date.UTC(parseInt(dtParts[0]), parseInt(dtParts[1]), parseInt(dtParts[2]), parseInt(dtParts[3]), parseInt(dtParts[4]), parseInt(dtParts[5]), parseInt(dtParts[5])))
+                        return new Date(Date.UTC(parseInt(dtParts[0]), parseInt(dtParts[1]) - 1, parseInt(dtParts[2]), parseInt(dtParts[3]), parseInt(dtParts[4]), parseInt(dtParts[5]), parseInt(dtParts[6])))
                             .getTime();
                     else
-                        return new Date(parseInt(dtParts[0]), parseInt(dtParts[1]), parseInt(dtParts[2]), parseInt(dtParts[3]), parseInt(dtParts[4]), parseInt(dtParts[5]), parseInt(dtParts[5]))
+                        return new Date(parseInt(dtParts[0]), parseInt(dtParts[1]) - 1, parseInt(dtParts[2]), parseInt(dtParts[3]), parseInt(dtParts[4]), parseInt(dtParts[5]), parseInt(dtParts[6]))
                             .getTime();
                 case QueryValue.IsDate:
                     var dParts = val.split("T")[0].split("-");
-                    return new Date(parseInt(dParts[0]), parseInt(dParts[1]), parseInt(dParts[2]))
+                    return new Date(parseInt(dParts[0]), parseInt(dParts[1]) - 1, parseInt(dParts[2]))
                         .getTime();
                 case QueryValue.IsTime:
                     val = this.normalizeTime(val, false, true);
@@ -365,7 +366,7 @@ var mvcct_odata;
                         parseInt(parts[1])) * 60 +
                         parseInt(parts[2])) * 60 +
                         parseInt(parts[3])) * 1000 +
-                        parts[4];
+                        parseInt(parts[4]);
                 default:
                     return null;
             }
@@ -416,9 +417,9 @@ var mvcct_odata;
             if (origin === void 0) { origin = null; }
             var _this = _super.call(this, origin) || this;
             if (origin) {
-                _this.operator = origin.operator;
-                _this.inv = origin.inv;
-                _this.property = origin.property;
+                _this.operator = origin.operator || null;
+                _this.inv = origin.inv || false;
+                _this.property = origin.property || null;
             }
             else {
                 _this.operator = null;
@@ -429,22 +430,23 @@ var mvcct_odata;
         }
         QueryFilterCondition.prototype.toQuery = function () {
             var val = this.getValue();
-            if (val == null || typeof val !== "string")
+            if (val === null)
                 return null;
-            if (!this.property)
-                return;
-            (function (o) {
-                if (typeof o !== "object")
-                    return false;
-                for (var key in o) {
-                    var cval = o[key];
-                    if (typeof cval === "string") {
-                        if (cval.indexOf(val) >= 0)
-                            return true;
+            if (!this.property) {
+                var res = function (o) {
+                    if (typeof o !== "object")
+                        return false;
+                    for (var key in o) {
+                        var cval = o[key];
+                        if (typeof cval === "string") {
+                            if (cval.indexOf(val) >= 0)
+                                return true;
+                        }
                     }
-                }
-                return false;
-            });
+                    return false;
+                };
+                return res;
+            }
             if (!this.operator)
                 return null;
             var op = QueryFilterCondition.dict[this.operator];
@@ -519,10 +521,10 @@ var mvcct_odata;
             var _this = _super.call(this) || this;
             if (!origin)
                 throw firstArgumentNull;
-            if (typeof origin.operator != "undefined")
-                _this.value = new QueryFilterBooleanOperator(origin);
-            else if (typeof origin.dateTimeType != "undefined")
+            if (typeof origin.dateTimeType != "undefined")
                 _this.value = new QueryFilterBooleanOperator(QueryFilterBooleanOperator.AND, new QueryFilterCondition(origin));
+            else if (typeof origin.operator != "undefined")
+                _this.value = new QueryFilterBooleanOperator(origin);
             else
                 _this.value = origin.value ?
                     new QueryFilterBooleanOperator(origin.value)
@@ -578,9 +580,9 @@ var mvcct_odata;
                 return function (x, y) {
                     var val1 = self.getProperty(x, prop);
                     var val2 = self.getProperty(y, prop);
-                    if (val1 < val2)
+                    if (val1 > val2)
                         return -1;
-                    else if (val1 > val2)
+                    else if (val1 < val2)
                         return 1;
                     else
                         return 0;
@@ -589,9 +591,9 @@ var mvcct_odata;
                 return function (x, y) {
                     var val1 = self.getProperty(x, prop);
                     var val2 = self.getProperty(y, prop);
-                    if (val1 > val2)
+                    if (val1 < val2)
                         return -1;
-                    else if (val1 < val2)
+                    else if (val1 > val2)
                         return 1;
                     else
                         return 0;
@@ -922,7 +924,11 @@ var mvcct_odata;
             }
             var sorting = this.sorting ? lexicalOrder(this.sorting.map(function (x) { return x.toCompare(); })) : null;
             if (sorting)
-                toCompose.push(function (x) { return x.sort(sorting); });
+                toCompose.push(function (x) {
+                    var y = x.map(function (el) { return el; });
+                    y.sort(sorting);
+                    return y;
+                });
             if (this.skip > 0 || (this.take && this.take > 0)) {
                 var skip_1 = this.skip > 0 ? this.skip : 0;
                 var take_1 = (this.take && this.take > 0) ? this.take + skip_1 : undefined;

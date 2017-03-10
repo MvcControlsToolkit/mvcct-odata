@@ -38,7 +38,7 @@ namespace mvcct_odata {
         }
         protected addInternal(keys: string[], index: number, row: any)
         {
-            if(index == keys.length-1) this.value.push(row);
+            if(index == keys.length) this.value.push(row);
             else {
                 let next=this.child[keys[index]];
                 if(!next) this.child[keys[index]]=next= new aggregationDictionary();
@@ -54,13 +54,14 @@ namespace mvcct_odata {
                     Array.prototype.push.apply(res, 
                         this.child[key].aggregate(depth-1, properties, aggregations));
                 }
+                return res;
             }
             else{
                 if(!this.value.length) return [];
                 aggregations.forEach(agg =>{agg.initialize(agg)});
                 let res: any={};
                  properties.forEach(key => {
-                        res[key]=(<any>(this.value))[key];
+                        res[key]=(<any>(this.value[0]))[key];
                     });
                 for(let o of this.value)
                 {
@@ -360,17 +361,17 @@ namespace mvcct_odata {
                     let dtParts = val.match(/\d+/g);
                     if(val.charAt(val.length-1).toUpperCase() == "Z") 
                         return new Date(Date.UTC(
-                            parseInt(dtParts[0]), parseInt(dtParts[1]), parseInt(dtParts[2]),
-                            parseInt(dtParts[3]), parseInt(dtParts[4]), parseInt(dtParts[5]), parseInt(dtParts[5])))
+                            parseInt(dtParts[0]), parseInt(dtParts[1])-1, parseInt(dtParts[2]),
+                            parseInt(dtParts[3]), parseInt(dtParts[4]), parseInt(dtParts[5]), parseInt(dtParts[6])))
                             .getTime();
                     else
                         return new Date(
-                            parseInt(dtParts[0]), parseInt(dtParts[1]), parseInt(dtParts[2]),
-                            parseInt(dtParts[3]), parseInt(dtParts[4]), parseInt(dtParts[5]), parseInt(dtParts[5]))
+                            parseInt(dtParts[0]), parseInt(dtParts[1])-1, parseInt(dtParts[2]),
+                            parseInt(dtParts[3]), parseInt(dtParts[4]), parseInt(dtParts[5]), parseInt(dtParts[6]))
                             .getTime();
                 case QueryValue.IsDate:
                    let dParts=val.split("T")[0].split("-");
-                   return new Date(parseInt(dParts[0]), parseInt(dParts[1]), parseInt(dParts[2]))
+                   return new Date(parseInt(dParts[0]), parseInt(dParts[1])-1, parseInt(dParts[2]))
                    .getTime();
                 case QueryValue.IsTime:
                     val=this.normalizeTime(val, false, true);
@@ -386,7 +387,7 @@ namespace mvcct_odata {
                         parseInt(parts[1]))*60 +
                         parseInt(parts[2]))*60  +
                         parseInt(parts[3]))*1000 + 
-                        parts[4] ;
+                        parseInt(parts[4]) ;
                 default:
                     return null;
             }
@@ -467,9 +468,9 @@ namespace mvcct_odata {
             super(origin);
             if(origin)
             {
-                this.operator=origin.operator;
-                this.inv=origin.inv;
-                this.property=origin.property;
+                this.operator=origin.operator || null;
+                this.inv=origin.inv || false;
+                this.property=origin.property || null;
             }
             else 
             {
@@ -481,9 +482,9 @@ namespace mvcct_odata {
         toQuery() : ((o: any) => boolean)|null
         {
             let val = this.getValue();
-            if (val == null || typeof val !== "string") return null;
-            if(!this.property) return 
-                (o: any) => {
+            if (val === null )  return null;
+            if(!this.property) {
+                var res = (o: any) => {
                     if(typeof o !== "object") return false;
                     for(let key in o) {
                         let cval = o[key];
@@ -493,6 +494,8 @@ namespace mvcct_odata {
                     }
                     return false;
                 };
+                return res;     
+            }
             if (!this.operator) return null;
             let op = QueryFilterCondition.dict[this.operator];
             if(!op) return null;
@@ -548,11 +551,11 @@ namespace mvcct_odata {
         {
             super();
             if (!origin) throw firstArgumentNull;
-            if(typeof (<IQueryFilterCondition>origin).operator != "undefined")
-                    this.value = new QueryFilterBooleanOperator(<IQueryFilterBooleanOperator>origin);
-            else if(typeof (<IQueryFilterCondition>origin).dateTimeType != "undefined")
+            if(typeof (<IQueryFilterCondition>origin).dateTimeType != "undefined")
                     this.value = new QueryFilterBooleanOperator(QueryFilterBooleanOperator.AND, 
-                        new QueryFilterCondition(<IQueryFilterCondition>origin));      
+                        new QueryFilterCondition(<IQueryFilterCondition>origin));
+            else if(typeof (<IQueryFilterCondition>origin).operator != "undefined")
+                    this.value = new QueryFilterBooleanOperator(<IQueryFilterBooleanOperator>origin);      
             else
                this.value = (<IQuerySearch>origin).value ?   
                     new QueryFilterBooleanOperator((<IQuerySearch>origin).value) 
@@ -614,16 +617,16 @@ namespace mvcct_odata {
                 return (x, y) =>{
                     let val1 = self.getProperty(x, prop);
                     let val2 = self.getProperty(y, prop);
-                    if(val1 < val2) return -1;
-                    else if(val1 > val2) return 1;
+                    if(val1 > val2) return -1;
+                    else if(val1 < val2) return 1;
                     else return 0;
                 }
             else
                return (x, y) =>{
                     let val1 = self.getProperty(x, prop);
                     let val2 = self.getProperty(y, prop);
-                    if(val1 > val2) return -1;
-                    else if(val1 < val2) return 1;
+                    if(val1 < val2) return -1;
+                    else if(val1 > val2) return 1;
                     else return 0;
                 } 
         }
@@ -1005,6 +1008,7 @@ namespace mvcct_odata {
         {
             return this.addToUrl(this.attachedTo? this.attachedTo.baseUrl : null);
         }
+        
         toQuery(): (o: Array<any>) =>  Array<any>
         {
              let toCompose: Array<(x: Array<any>) => Array<any>> =[];
@@ -1028,7 +1032,11 @@ namespace mvcct_odata {
              }
              let sorting = this.sorting ? lexicalOrder(this.sorting.map(x => x.toCompare())) : null;
              if(sorting) toCompose.push(
-                x => x.sort(sorting)
+                x => {
+                    let y = x.map(el => el);
+                    y.sort(sorting);
+                    return y;
+                }
              );
              if(this.skip>0 || (this.take && this.take>0))
              {
