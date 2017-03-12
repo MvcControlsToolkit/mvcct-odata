@@ -1,5 +1,4 @@
 
-namespace mvcct_odata {
     /// Query tree basic classes and interfaces
     const firstArgumentNull = "first argument must have a not null value";
     const anArgumentNull = "all arguments must have a not null value";
@@ -1054,8 +1053,4 @@ namespace mvcct_odata {
     } 
     
 
-}
 
-
-
-export = mvcct_odata;

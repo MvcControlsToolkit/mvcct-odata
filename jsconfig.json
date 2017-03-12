@@ -1,0 +1,6 @@
+{
+    "include": [
+        "test.js",
+        "dest/global/mvcct.odata.js"
+    ]
+}

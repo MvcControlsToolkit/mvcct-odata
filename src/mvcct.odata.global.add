@@ -1,3 +1,5 @@
 namespace mvcct{
-    export let odata=mvcct_odata;
+    export namespace odata{
+        ///{}
+    }
 }

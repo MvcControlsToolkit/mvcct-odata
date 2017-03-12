@@ -20,6 +20,14 @@ var except = [
 ];
 
 //end settings
+var extract = function(x){
+  var startIndex = x.indexOf("///{");
+  if(startIndex < 0) return x;
+  else startIndex=startIndex+4;
+  var endIndex = x.lastIndexOf("///}");
+  if(endIndex>0) return x.slice(startIndex, endIndex);
+  else return x.slice(startIndex);
+}
 var walk = function(directoryName, ext) {
   var res=  [];
   ext=ext || ".ts";
@@ -40,10 +48,15 @@ var toProcess=walk(src);
 toProcess.forEach(function(file){
   dirs.forEach(function(dir){
     let toAdd=file.substr(0, file.length-3)+"."+dir+".add";
+    let outFile=path.join(dest, dir, path.basename(file));
     if(fs.existsSync(toAdd)){
-      let outFile=path.join(dest, dir, path.basename(file));
+      let input = extract(fs.readFileSync(file, 'utf8'));
       fs.writeFileSync(outFile, 
-          fs.readFileSync(file)+"\n"+fs.readFileSync(toAdd));
+          fs.readFileSync(toAdd, 'utf8').replace("///{}", input));
+    }
+    else{
+      fs.writeFileSync(outFile, 
+          fs.readFileSync(file));
     }
   })
 });
@@ -60,6 +73,7 @@ for(let i=0; i<dirs.length; i++)
         let baseName=file.substr(0, file.length-3);
         if(baseName.match(".min$")) return;
         let inMap = file+".map";
+        if(!fs.existsSync(inMap)) inMap=undefined;
         let outFile = baseName+".min.js";
         let outMap = baseName+".min.js.map";
         let res=UglifyJS.minify(file, {
