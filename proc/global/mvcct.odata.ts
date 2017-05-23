@@ -101,9 +101,17 @@ namespace mvcct{
             if (name == null) return null;
             return name.replace(/\./g, '/');
         }
+        decodeProperty(name: string): string
+        {
+            if (name == null) return null;
+            return name.replace(/\//g, '.');
+        }
         abstract toString() : string|null;
         getProperty(o: any, p: string): any
         {
+            return QueryNode.getProperty(o, p);
+        }
+        static getProperty(o: any, p: string): any{
             var path=p.split('.');
             var i=0;
             while(typeof o === "object" && i<path.length)
@@ -145,12 +153,12 @@ namespace mvcct{
         
         constructor(origin: IQueryFilterBooleanOperator);
         constructor(operator: number, 
-            a1: QueryValue|QueryFilterBooleanOperator,
-            a2?: QueryValue|QueryFilterBooleanOperator
+            a1: QueryFilterClause,
+            a2?: QueryFilterClause
             );
         constructor(y: number|IQueryFilterBooleanOperator, 
-            a1: QueryValue|QueryFilterBooleanOperator = null,
-            a2: QueryValue|QueryFilterBooleanOperator = null)
+            a1: QueryFilterClause = null,
+            a2: QueryFilterClause = null)
             {
                 super();
                 if(typeof y == "number")
@@ -336,7 +344,7 @@ namespace mvcct{
                 "T"+this.formatInt(x.getHours(), 2) +
                 ":"+this.formatInt(x.getMinutes(), 2) +
                 ":"+this.formatInt(x.getSeconds(), 2) +
-                "."+this.formatInt(x.getUTCMilliseconds(), 3);
+                "."+this.formatInt(x.getMilliseconds(), 3);
         }
         setBoolean(x: boolean|null) {
             this.dateTimeType = QueryValue.IsNotDateTime;
@@ -347,6 +355,10 @@ namespace mvcct{
             this.value = x;
         }
         setString(x: string|null) {
+            this.dateTimeType = QueryValue.IsNotDateTime;
+            this.value=x;
+        }
+        setNotDateTime(x: any){
             this.dateTimeType = QueryValue.IsNotDateTime;
             this.value=x;
         }
@@ -396,7 +408,7 @@ namespace mvcct{
         toString() : string|null
         {
             if(this.value===null || typeof this.value == "undefined")
-                 return null;
+                 return "null";
             else if(this.dateTimeType == QueryValue.IsNotDateTime)
                 return this.value + "";
             let val = (<string>this.value);
@@ -453,14 +465,37 @@ namespace mvcct{
                 "lt": (x, y) => x < y,
                 "ge": (x, y) => x >= y,
                 "le": (x, y) => x <= y,
-                "startswith": (x, y) => (x+'').indexOf(y+'') == 0,
+                "startswith": (x, y) => ((x||'')+'').indexOf((y||'')+'') == 0,
                 "endswith": (x, y) => {
-                    let xs=x+'';
-                    let ys=y+'';
+                    let xs=(x||'')+'';
+                    let ys=(y||'')+'';
                     return xs.indexOf(ys, xs.length - ys.length) >=0;
                 },
-                "contains": (x, y) => (x+'').indexOf(y+'') >= 0
+                "contains": (x, y) => ((x||'')+'').indexOf((y||'')+'') >= 0
             };
+        public static fromModelAndName(dateTimeType: number, property: string, o: any, op:string='eq', inv: boolean=false): QueryFilterCondition | null
+        {
+            if(!o) return null;
+            var value = QueryNode.getProperty(o, property);
+            var res = new QueryFilterCondition();
+            res.inv=inv;
+            res.property=property;
+            res.operator=op;
+            switch(dateTimeType){
+                case QueryValue.IsDate:
+                    res.setDate(value as Date|null);
+                    break;
+                case QueryValue.IsTime:
+                    res.setTime(value as Date|null);
+                    break;
+                case QueryValue.IsDateTime:
+                    res.setDateTimeLocal(value as Date|null);
+                default:
+                    res.setNotDateTime(value);    
+                    break;
+            }
+            return res;
+        }
         operator: string|null;
         property: string|null;
         inv: boolean;
@@ -483,7 +518,7 @@ namespace mvcct{
         toQuery() : ((o: any) => boolean)|null
         {
             let val = this.getValue();
-            if (val === null )  return null;
+            
             if(!this.property) {
                 var res = (o: any) => {
                     if(typeof o !== "object") return false;
@@ -767,24 +802,29 @@ namespace mvcct{
     {
         keys: Array<string>;
         aggregations: Array<IQueryAggregation>;
+        dateTimeTypes: Array<number>;
     }
 
     export class QueryGrouping    extends QueryNode implements IQueryGrouping
     {
         keys: Array<string>;
         aggregations: Array<QueryAggregation>; 
+        dateTimeTypes: Array<number>;
         constructor(origin: IQueryGrouping = null)
         {
             super();
             if(!origin)
             {
                 this.keys=new Array<string>();
+                this.dateTimeTypes=new Array<number>();
                 this.aggregations=new Array<QueryAggregation>();
             }
             else
             {
                 if(origin.keys) this.keys=origin.keys.map(x => x);
                 else this.keys=new Array<string>();
+                if(origin.dateTimeTypes) this.dateTimeTypes=origin.dateTimeTypes.map(x => x);
+                else this.dateTimeTypes=new Array<number>();
                 if(origin.aggregations) this.aggregations=origin.aggregations
                     .map(x => new QueryAggregation(x));
                 else this.aggregations=new Array<QueryAggregation>();
@@ -848,10 +888,10 @@ namespace mvcct{
         accpetsJson: boolean;
         returnsJson: boolean;
         bearerToken: string|null;
-
+        ajaxId: string|null;;
         constructor(x: IEndpoint);
-        constructor(baseUrl: string, verb: string, accpetsJson?: boolean, returnsJson?: boolean, bearerToken?: string|null)
-        constructor(y: string|IEndpoint, verb: string = null, accpetsJson: boolean = false, returnsJson: boolean = false, bearerToken: string|null = null)
+        constructor(baseUrl: string, verb: string, accpetsJson?: boolean, returnsJson?: boolean, bearerToken?: string|null, ajaxId?: string|null)
+        constructor(y: string|IEndpoint, verb: string = null, accpetsJson: boolean = false, returnsJson: boolean = false, bearerToken: string|null = null, ajaxId: string|null = null)
         {
             if(typeof y == "string"){
                 this.baseUrl = y;
@@ -859,6 +899,7 @@ namespace mvcct{
                 this.accpetsJson=accpetsJson;
                 this.returnsJson=returnsJson;
                 this.verb = verb;
+                this.ajaxId=ajaxId;
             }
             else
             {
@@ -948,6 +989,57 @@ namespace mvcct{
 
                 this.attachedTo=null;
             }
+        }
+        addFilterCondition(filter: QueryFilterClause|null, useOr: boolean=false): void
+        {
+            if(!filter) return;
+            if (!this.filter){
+                this.filter = typeof (<QueryFilterCondition>filter).dateTimeType == "undefined" ?
+                    filter as QueryFilterBooleanOperator
+                    :
+                    new QueryFilterBooleanOperator(
+                        QueryFilterBooleanOperator.and,
+                        filter as QueryFilterCondition,
+                        null
+                   )
+                return;
+            }
+            var cleanFilter: QueryFilterClause ;
+            if(this.filter.operator != QueryFilterBooleanOperator.not)
+            {
+                if (!this.filter.child1 && !this.filter.argument1) 
+                    cleanFilter = this.filter.argument2 || this.filter.child2;
+                else if (!this.filter.child2 && !this.filter.argument2) 
+                    cleanFilter = this.filter.argument1 || this.filter.child1;
+                else cleanFilter = this.filter;
+            }
+            else cleanFilter = this.filter;
+            this.filter = new QueryFilterBooleanOperator(
+                useOr ? QueryFilterBooleanOperator.or : 
+                        QueryFilterBooleanOperator.and,
+                cleanFilter,
+                filter
+            );
+        }
+        getGroupDetailQuery(o: any): QueryDescription|null
+        {
+            if(!o || !this.grouping || !this.grouping.keys || !this.grouping.keys.length) return null;
+            var newQuery = new QueryDescription(this);
+            newQuery.grouping = null;
+            newQuery.take = null;
+            newQuery.page = 1;
+            newQuery.skip = 0;
+            for(var i=0; i< this.grouping.keys.length; i++)
+            {
+                var cond = QueryFilterCondition.fromModelAndName(
+                    this.grouping.dateTimeTypes[i], 
+                    this.grouping.keys[i],
+                    o
+                    );
+                if(!cond) continue;
+                newQuery.addFilterCondition(cond);
+            }
+            return newQuery;
         }
         public queryString(): string|null
         {

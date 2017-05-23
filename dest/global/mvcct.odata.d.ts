@@ -13,8 +13,10 @@ declare namespace mvcct {
         }
         abstract class QueryNode {
             encodeProperty(name: string): string;
+            decodeProperty(name: string): string;
             abstract toString(): string | null;
             getProperty(o: any, p: string): any;
+            static getProperty(o: any, p: string): any;
         }
         abstract class QueryFilterClause extends QueryNode {
             abstract toQuery(): ((o: any) => boolean) | null;
@@ -39,7 +41,7 @@ declare namespace mvcct {
             child1: QueryFilterBooleanOperator;
             child2: QueryFilterBooleanOperator;
             constructor(origin: IQueryFilterBooleanOperator);
-            constructor(operator: number, a1: QueryValue | QueryFilterBooleanOperator, a2?: QueryValue | QueryFilterBooleanOperator);
+            constructor(operator: number, a1: QueryFilterClause, a2?: QueryFilterClause);
             toString(): string | null;
             toQuery(): ((o: any) => boolean) | null;
         }
@@ -67,6 +69,7 @@ declare namespace mvcct {
             setBoolean(x: boolean | null): void;
             setNumber(x: number | null): void;
             setString(x: string | null): void;
+            setNotDateTime(x: any): void;
             getValue(): any;
             toString(): string | null;
             toQuery(): ((o: any) => boolean) | null;
@@ -87,6 +90,7 @@ declare namespace mvcct {
             static readonly endswith: string;
             static readonly contains: string;
             private static readonly dict;
+            static fromModelAndName(dateTimeType: number, property: string, o: any, op?: string, inv?: boolean): QueryFilterCondition | null;
             operator: string | null;
             property: string | null;
             inv: boolean;
@@ -144,10 +148,12 @@ declare namespace mvcct {
         interface IQueryGrouping {
             keys: Array<string>;
             aggregations: Array<IQueryAggregation>;
+            dateTimeTypes: Array<number>;
         }
         class QueryGrouping extends QueryNode implements IQueryGrouping {
             keys: Array<string>;
             aggregations: Array<QueryAggregation>;
+            dateTimeTypes: Array<number>;
             constructor(origin?: IQueryGrouping);
             private encodeGroups();
             private encodeAggrgates();
@@ -167,8 +173,9 @@ declare namespace mvcct {
             accpetsJson: boolean;
             returnsJson: boolean;
             bearerToken: string | null;
+            ajaxId: string | null;
             constructor(x: IEndpoint);
-            constructor(baseUrl: string, verb: string, accpetsJson?: boolean, returnsJson?: boolean, bearerToken?: string | null);
+            constructor(baseUrl: string, verb: string, accpetsJson?: boolean, returnsJson?: boolean, bearerToken?: string | null, ajaxId?: string | null);
         }
         interface IQueryDescription {
             skip: number | null;
@@ -199,6 +206,8 @@ declare namespace mvcct {
             attachedTo: Endpoint;
             static fromJson(x: string): QueryDescription;
             constructor(origin: IQueryDescription);
+            addFilterCondition(filter: QueryFilterClause | null, useOr?: boolean): void;
+            getGroupDetailQuery(o: any): QueryDescription | null;
             queryString(): string | null;
             addToUrl(url: string | null): string | null;
             toString(): string | null;

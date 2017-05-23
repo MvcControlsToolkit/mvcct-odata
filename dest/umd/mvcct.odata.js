@@ -108,7 +108,15 @@ var __extends = (this && this.__extends) || (function () {
                 return null;
             return name.replace(/\./g, '/');
         };
+        QueryNode.prototype.decodeProperty = function (name) {
+            if (name == null)
+                return null;
+            return name.replace(/\//g, '.');
+        };
         QueryNode.prototype.getProperty = function (o, p) {
+            return QueryNode.getProperty(o, p);
+        };
+        QueryNode.getProperty = function (o, p) {
             var path = p.split('.');
             var i = 0;
             while (typeof o === "object" && i < path.length)
@@ -330,7 +338,7 @@ var __extends = (this && this.__extends) || (function () {
                 "T" + this.formatInt(x.getHours(), 2) +
                 ":" + this.formatInt(x.getMinutes(), 2) +
                 ":" + this.formatInt(x.getSeconds(), 2) +
-                "." + this.formatInt(x.getUTCMilliseconds(), 3);
+                "." + this.formatInt(x.getMilliseconds(), 3);
         };
         QueryValue.prototype.setBoolean = function (x) {
             this.dateTimeType = QueryValue.IsNotDateTime;
@@ -341,6 +349,10 @@ var __extends = (this && this.__extends) || (function () {
             this.value = x;
         };
         QueryValue.prototype.setString = function (x) {
+            this.dateTimeType = QueryValue.IsNotDateTime;
+            this.value = x;
+        };
+        QueryValue.prototype.setNotDateTime = function (x) {
             this.dateTimeType = QueryValue.IsNotDateTime;
             this.value = x;
         };
@@ -382,7 +394,7 @@ var __extends = (this && this.__extends) || (function () {
         };
         QueryValue.prototype.toString = function () {
             if (this.value === null || typeof this.value == "undefined")
-                return null;
+                return "null";
             else if (this.dateTimeType == QueryValue.IsNotDateTime)
                 return this.value + "";
             var val = this.value;
@@ -437,10 +449,33 @@ var __extends = (this && this.__extends) || (function () {
             }
             return _this;
         }
+        QueryFilterCondition.fromModelAndName = function (dateTimeType, property, o, op, inv) {
+            if (op === void 0) { op = 'eq'; }
+            if (inv === void 0) { inv = false; }
+            if (!o)
+                return null;
+            var value = QueryNode.getProperty(o, property);
+            var res = new QueryFilterCondition();
+            res.inv = inv;
+            res.property = property;
+            res.operator = op;
+            switch (dateTimeType) {
+                case QueryValue.IsDate:
+                    res.setDate(value);
+                    break;
+                case QueryValue.IsTime:
+                    res.setTime(value);
+                    break;
+                case QueryValue.IsDateTime:
+                    res.setDateTimeLocal(value);
+                default:
+                    res.setNotDateTime(value);
+                    break;
+            }
+            return res;
+        };
         QueryFilterCondition.prototype.toQuery = function () {
             var val = this.getValue();
-            if (val === null)
-                return null;
             if (!this.property) {
                 var res = function (o) {
                     if (typeof o !== "object")
@@ -515,13 +550,13 @@ var __extends = (this && this.__extends) || (function () {
         "lt": function (x, y) { return x < y; },
         "ge": function (x, y) { return x >= y; },
         "le": function (x, y) { return x <= y; },
-        "startswith": function (x, y) { return (x + '').indexOf(y + '') == 0; },
+        "startswith": function (x, y) { return ((x || '') + '').indexOf((y || '') + '') == 0; },
         "endswith": function (x, y) {
-            var xs = x + '';
-            var ys = y + '';
+            var xs = (x || '') + '';
+            var ys = (y || '') + '';
             return xs.indexOf(ys, xs.length - ys.length) >= 0;
         },
-        "contains": function (x, y) { return (x + '').indexOf(y + '') >= 0; }
+        "contains": function (x, y) { return ((x || '') + '').indexOf((y || '') + '') >= 0; }
     };
     exports.QueryFilterCondition = QueryFilterCondition;
     var QuerySearch = (function (_super) {
@@ -727,6 +762,7 @@ var __extends = (this && this.__extends) || (function () {
             var _this = _super.call(this) || this;
             if (!origin) {
                 _this.keys = new Array();
+                _this.dateTimeTypes = new Array();
                 _this.aggregations = new Array();
             }
             else {
@@ -734,6 +770,10 @@ var __extends = (this && this.__extends) || (function () {
                     _this.keys = origin.keys.map(function (x) { return x; });
                 else
                     _this.keys = new Array();
+                if (origin.dateTimeTypes)
+                    _this.dateTimeTypes = origin.dateTimeTypes.map(function (x) { return x; });
+                else
+                    _this.dateTimeTypes = new Array();
                 if (origin.aggregations)
                     _this.aggregations = origin.aggregations
                         .map(function (x) { return new QueryAggregation(x); });
@@ -787,17 +827,19 @@ var __extends = (this && this.__extends) || (function () {
     }(QueryNode));
     exports.QueryGrouping = QueryGrouping;
     var Endpoint = (function () {
-        function Endpoint(y, verb, accpetsJson, returnsJson, bearerToken) {
+        function Endpoint(y, verb, accpetsJson, returnsJson, bearerToken, ajaxId) {
             if (verb === void 0) { verb = null; }
             if (accpetsJson === void 0) { accpetsJson = false; }
             if (returnsJson === void 0) { returnsJson = false; }
             if (bearerToken === void 0) { bearerToken = null; }
+            if (ajaxId === void 0) { ajaxId = null; }
             if (typeof y == "string") {
                 this.baseUrl = y;
                 this.bearerToken = bearerToken;
                 this.accpetsJson = accpetsJson;
                 this.returnsJson = returnsJson;
                 this.verb = verb;
+                this.ajaxId = ajaxId;
             }
             else {
                 if (!y)
@@ -809,6 +851,7 @@ var __extends = (this && this.__extends) || (function () {
                 this.verb = y.verb;
             }
         }
+        ;
         return Endpoint;
     }());
     Endpoint.Get = "GET";
@@ -849,6 +892,47 @@ var __extends = (this && this.__extends) || (function () {
             if (!x)
                 return null;
             return new QueryDescription(JSON.parse(x));
+        };
+        QueryDescription.prototype.addFilterCondition = function (filter, useOr) {
+            if (useOr === void 0) { useOr = false; }
+            if (!filter)
+                return;
+            if (!this.filter) {
+                this.filter = typeof filter.dateTimeType == "undefined" ?
+                    filter
+                    :
+                        new QueryFilterBooleanOperator(QueryFilterBooleanOperator.and, filter, null);
+                return;
+            }
+            var cleanFilter;
+            if (this.filter.operator != QueryFilterBooleanOperator.not) {
+                if (!this.filter.child1 && !this.filter.argument1)
+                    cleanFilter = this.filter.argument2 || this.filter.child2;
+                else if (!this.filter.child2 && !this.filter.argument2)
+                    cleanFilter = this.filter.argument1 || this.filter.child1;
+                else
+                    cleanFilter = this.filter;
+            }
+            else
+                cleanFilter = this.filter;
+            this.filter = new QueryFilterBooleanOperator(useOr ? QueryFilterBooleanOperator.or :
+                QueryFilterBooleanOperator.and, cleanFilter, filter);
+        };
+        QueryDescription.prototype.getGroupDetailQuery = function (o) {
+            if (!o || !this.grouping || !this.grouping.keys || !this.grouping.keys.length)
+                return null;
+            var newQuery = new QueryDescription(this);
+            newQuery.grouping = null;
+            newQuery.take = null;
+            newQuery.page = 1;
+            newQuery.skip = 0;
+            for (var i = 0; i < this.grouping.keys.length; i++) {
+                var cond = QueryFilterCondition.fromModelAndName(this.grouping.dateTimeTypes[i], this.grouping.keys[i], o);
+                if (!cond)
+                    continue;
+                newQuery.addFilterCondition(cond);
+            }
+            return newQuery;
         };
         QueryDescription.prototype.queryString = function () {
             var sb = new Array();

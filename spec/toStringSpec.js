@@ -3,6 +3,10 @@ function normalize (str)
 {
     return str.replace(/\s/g, '')
 }
+function normalizeExt (str)
+{
+    return str.replace(/\s/g, '').replace(/\(/g, '').replace(/\)/g, '');
+}
 describe("leaf condition constants", function(){
     it("date", function(){
         let cond = new odata.QueryFilterCondition({
@@ -31,6 +35,16 @@ describe("leaf condition constants", function(){
         expect(normalize(cond.toString())).toBe(normalize("(ATime eq 17:20:00.000)"));
         cond.value = "17";
         expect(normalize(cond.toString())).toBe(normalize("(ATime eq 17:00:00.000)"));
+    });
+    it("time null", function(){
+        let cond = new odata.QueryFilterCondition({
+            dateTimeType: odata.QueryValue.IsTime,
+            value: null,
+            operator: odata.QueryFilterCondition.eq,
+            property: "ATime"
+        });
+        expect(normalize(cond.toString())).toBe(normalize("(ATime eq null)"));
+        
     });
     it("duration", function(){
         let cond = new odata.QueryFilterCondition({
@@ -560,6 +574,7 @@ describe("integration", function(){
     let query = new odata.QueryDescription({
             grouping: new odata.QueryGrouping({
                 keys: ["AString", "AFloat"],
+                dateTimeTypes: [0, 0],
                 aggregations:null
             }),
             sorting: [new odata.QuerySortingCondition('AString')],
@@ -592,6 +607,16 @@ describe("integration", function(){
         query.search=null;
         expect(normalize(query.toString()))
             .toBe(normalize("http://www.dummy.com?$filter=(ABool eq true)&$apply=groupby((AString, AFloat))&$orderby=AString asc"));      
+    });
+    it("groupDetail to string", function(){
+        query.search=null;
+        var newQuery=query.getGroupDetailQuery({
+            AString: 'test',
+            AFloat: 1
+        });
+        newQuery.customUrlEncode(function(x){return x;});
+        expect(normalizeExt(newQuery.addToUrl("http://www.customdummy.com")))
+            .toBe(normalizeExt("http://www.customdummy.com?$filter=(ABool eq true) and (AString eq 'test') and (AFloat eq 1) &$orderby=AString asc"));
     });
     it("tostring with custom url", function(){
         query.search=null;
