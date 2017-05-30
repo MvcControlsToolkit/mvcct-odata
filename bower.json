@@ -1,6 +1,6 @@
 {
     "name": "mvcct-odata",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "JavaScript OData client",
     "main": "dest/umd/mvcct.odata.min.js",
     "repository": {

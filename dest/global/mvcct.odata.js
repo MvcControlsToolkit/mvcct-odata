@@ -512,7 +512,7 @@ var mvcct;
                 if (this.dateTimeType == QueryValue.IsNotDateTime &&
                     typeof this.value == "string" &&
                     !this.isGuid())
-                    val = "'" + val + "'";
+                    val = "'" + val.replace(/'/g, "''") + "'";
                 switch (this.operator) {
                     case QueryFilterCondition.startswith:
                     case QueryFilterCondition.endswith:
