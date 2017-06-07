@@ -50,16 +50,9 @@ The distribution contains .js and TypeScript declaration files (d.ts) for three 
 
 Queries are prepared by building an object tree rooted in a `QueryDescription` instance. Then one may call QueryDescription methods like `toString()` to get the whole ODATA compatible Url of the server request, or `toQuery` that returns a funtion from an array to a an array that executes the query on the JavaScript input array.
 
-## QueryDescription class
-*Under construction*
-## Building filters
-*Under construction*
-## building free search
-*Under construction*
-## building sorting
-*Under construction*
-## Grouping and aggregations
-*Under construction*
+## Classes documentation
+
+[See the Core Mvc Controls Toolkit official documentation.](http://documentation.aspnetcore.mvc-controls.com/JavaScript/OData)
  
 
 
