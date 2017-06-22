@@ -907,6 +907,7 @@
                this.accpetsJson=y.accpetsJson;
                this.returnsJson=y.returnsJson;
                this.verb = y.verb;
+               this.ajaxId = y.ajaxId;
             }
         }
         

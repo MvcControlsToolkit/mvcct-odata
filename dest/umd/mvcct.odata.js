@@ -849,6 +849,7 @@ var __extends = (this && this.__extends) || (function () {
                 this.accpetsJson = y.accpetsJson;
                 this.returnsJson = y.returnsJson;
                 this.verb = y.verb;
+                this.ajaxId = y.ajaxId;
             }
         }
         ;
